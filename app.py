@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Müşteri Ayrıştırmalı & PDF Destekli Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Sunucu Kayıtlı & Taslak Yönetimli Sürüm
 """
 
 import streamlit as st
@@ -7,8 +7,14 @@ import pandas as pd
 import plotly.graph_objects as go
 import math
 import json
+import os
 
 st.set_page_config(page_title="Emre Doğaltaş Entegre Yönetim Portalı", layout="wide")
+
+# Taslakların sunucuda saklanacağı klasör
+TEMPLATES_DIR = "saved_templates"
+if not os.path.exists(TEMPLATES_DIR):
+    os.makedirs(TEMPLATES_DIR)
 
 st.title("🗿 Emre Doğaltaş Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
@@ -16,6 +22,38 @@ st.markdown("---")
 
 if "cart" not in st.session_state:
     st.session_state.cart = []
+
+# ------------------------------------------
+# YAN MENÜ (SIDEBAR): HIZLI TASLAK YÜKLEME
+# ------------------------------------------
+st.sidebar.header("📁 Sunucudaki Kayıtlı Taslaklar")
+
+saved_files = [f for f in os.listdir(TEMPLATES_DIR) if f.endswith(".json")]
+
+if saved_files:
+    selected_template = st.sidebar.selectbox("Hızlı Taslak Seçin:", ["Seçiniz..."] + saved_files)
+    
+    if selected_template != "Seçiniz...":
+        template_path = os.path.join(TEMPLATES_DIR, selected_template)
+        with open(template_path, "r", encoding="utf-8") as f:
+            t_data = json.load(f)
+            
+        st.sidebar.success(f"📌 **Proje:** {t_data.get('proje_kodu', '')}")
+        st.sidebar.info(f"🟢 **Durum:** {t_data.get('onay_durumu', '')}")
+        if t_data.get("yonetici_notu"):
+            st.sidebar.caption(f"📝 **Not:** {t_data.get('yonetici_notu')}")
+            
+        if st.sidebar.button("⚡ Bu Taslağı Ekrana Yükle", use_container_width=True):
+            st.session_state.cart = t_data.get("sepet", [])
+            st.toast(f"{selected_template} başarıyla yüklendi!", icon="🚀")
+            st.rerun()
+else:
+    st.sidebar.info("Henüz sunucuda kayıtlı taslak bulunmuyor.")
+
+st.sidebar.markdown("---")
+if st.sidebar.button("🗑️ Ekrandaki Sepeti Temizle", use_container_width=True):
+    st.session_state.cart = []
+    st.rerun()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📐 1. Ürün & Kasa Parametreleri", 
@@ -62,7 +100,6 @@ with tab1:
             p_thickness = p_thickness_in * 2.54
             
         density = st.number_input("Taş Yoğunluğu (gr/cm³)", value=2.7, step=0.1)
-        
         piece_m2 = (p_length / 100) * (p_width / 100)
 
     with col2:
@@ -203,7 +240,7 @@ with tab2:
         st.toast(f"{customer_name} - {product_name} sepete eklendi!", icon="✅")
 
 # ------------------------------------------
-# TAB 3: SIPARIS HAVUZU & PACKING LIST (Müşteri Ayrıştırmalı & Detaylı)
+# TAB 3: SIPARIS HAVUZU & PACKING LIST
 # ------------------------------------------
 with tab3:
     st.header("🛒 Sipariş Havuzu & Çeki Listesi (Packing List)")
@@ -232,7 +269,6 @@ with tab3:
             hide_index=True
         )
 
-        # Güncel Değerleri Hesaplama
         updated_cart = []
         for index, row in edited_df.iterrows():
             crates = row["Kasa Sayısı"]
@@ -258,7 +294,6 @@ with tab3:
         st.session_state.cart = updated_cart
         df_updated = pd.DataFrame(updated_cart)
 
-        # Genel Özet
         st.subheader("📊 Genel Konteyner Özeti")
         c_p1, c_p2, c_p3, c_p4 = st.columns(4)
         tot_crates = df_updated["Kasa Sayısı"].sum()
@@ -272,9 +307,6 @@ with tab3:
         c_p3.metric("TOPLAM BRÜT AĞIRLIK", f"{tot_kg:,.0f} kg", f"{tot_kg * 2.20462:,.0f} lbs")
         c_p4.metric("TOPLAM KUTU", f"{tot_boxes:,.0f} Kutu")
 
-        # ------------------------------------------
-        # MÜŞTERİ BAZLI AYRIŞTIRMA VE ÖZET
-        # ------------------------------------------
         st.markdown("---")
         st.subheader("🏢 Müşteri / Firma Bazlı Ayrıştırılmış Packing List")
         
@@ -295,11 +327,6 @@ with tab3:
                 c_c2.markdown(f"**Müşteri Kutu:** {cust_df['Toplam Kutu'].sum():,.0f} Kutu")
                 c_c3.markdown(f"**Müşteri Miktar:** {cust_df['Toplam Adet'].sum():,.0f} Adet / {cust_df['Toplam m²'].sum():.2f} m²")
                 c_c4.markdown(f"**Müşteri Ağırlık:** {cust_df['Toplam Ağırlık (kg)'].sum():,.0f} kg")
-
-        st.markdown("---")
-        if st.button("🗑 Sepeti Temizle"):
-            st.session_state.cart = []
-            st.rerun()
 
 # ------------------------------------------
 # TAB 4: İHRACAT & KONTEYNER DOLULUK
@@ -400,35 +427,45 @@ with tab4:
 # TAB 5: YÖNETİCİ ŞABLON & ONAY YÖNETİMİ
 # ------------------------------------------
 with tab5:
-    st.header("💾 Yönetici Şablon, Onay & İmalat Talimatı")
+    st.header("💾 Sunucu Taslak Kayıt & Yükleme Yönetimi")
     
     col_m1, col_m2 = st.columns(2)
     
     with col_m1:
-        st.subheader("📝 Sipariş Reçetesini Kaydet")
-        order_no = st.text_input("Konteyner / Proje Dosya Kodu", value="KONTEYNER-2026-01")
+        st.subheader("📝 Taslağı Doğrudan Sunucuya Kaydet")
+        order_no = st.text_input("Konteyner / Proje Dosya Adı", value="KONTEYNER-2026-01")
         approval_status = st.selectbox("Yönetici Onay Durumu", ["Taslak / İncelemede", "Dizim Onayladı", "İhracat Onayladı", "YÖNETİM ONAYLADI (Üretime Verilsin)"])
         exec_notes = st.text_area("Fabrika & Paketleme Özel Talimatları", value="Kasalar fumigasyonlu ve alt kısmı forklift girişine uygun takozlu hazırlanacak. Nem alıcı jel konulacak.")
 
         if st.session_state.cart:
-            payload = {
-                "proje_kodu": order_no,
-                "onay_durumu": approval_status,
-                "yonetici_notu": exec_notes,
-                "sepet": st.session_state.cart
-            }
-            json_out = json.dumps(payload, ensure_ascii=False, indent=4)
-            st.download_button("💾 Üretim & İhracat Reçetesini İndir (.json)", data=json_out, file_name=f"{order_no}_recete.json", mime="application/json", use_container_width=True)
+            if st.button("☁️ Taslağı Portala / Sunucuya Kaydet", use_container_width=True):
+                payload = {
+                    "proje_kodu": order_no,
+                    "onay_durumu": approval_status,
+                    "yonetici_notu": exec_notes,
+                    "sepet": st.session_state.cart
+                }
+                save_path = os.path.join(TEMPLATES_DIR, f"{order_no}.json")
+                with open(save_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, ensure_ascii=False, indent=4)
+                
+                st.success(f"✅ '{order_no}' isimli taslak sunucuya başarıyla kaydedildi! Sol yan menüden herkes erişebilir.")
+                st.rerun()
+                
+            st.markdown("---")
+            # İsteğe bağlı bilgisayara indirme seçeneği
+            payload_json = json.dumps({"proje_kodu": order_no, "onay_durumu": approval_status, "yonetici_notu": exec_notes, "sepet": st.session_state.cart}, ensure_ascii=False, indent=4)
+            st.download_button("💾 Bilgisayara .json Olarak İndir (Yedek)", data=payload_json, file_name=f"{order_no}_recete.json", mime="application/json", use_container_width=True)
 
     with col_m2:
-        st.subheader("📂 Kayıtlı Reçete Yükle")
-        up_file = st.file_uploader("Daha önce indirilen .json reçetesini yükleyin", type=["json"])
+        st.subheader("📂 Dışarıdan (.json) Taslak Yükle")
+        up_file = st.file_uploader("Bilgisayarınızdaki bir .json dosyasını yükleyin", type=["json"])
         if up_file is not None:
             data = json.load(up_file)
-            st.success(f"Proje: **{data.get('proje_kodu')}** | Durum: **{data.get('onay_durumu')}**")
+            st.success(f"Yüklenen Proje: **{data.get('proje_kodu')}** | Durum: **{data.get('onay_durumu')}**")
             st.info(f"Yönetici Notu: {data.get('yonetici_notu')}")
             
-            if st.button("📥 Reçeteyi Aktif Sipariş Yap", use_container_width=True):
+            if st.button("📥 Yüklenen Dosyayı Ekrana Aktar", use_container_width=True):
                 st.session_state.cart = data.get("sepet", [])
-                st.toast("Reçete başarıyla yüklendi!", icon="🚀")
+                st.toast("Dış dosya başarıyla aktarıldı!", icon="🚀")
                 st.rerun()
