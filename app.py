@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Dinamik Kasa Düzenlemeli Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Müşteri Ayrıştırmalı & PDF Destekli Sürüm
 """
 
 import streamlit as st
@@ -10,7 +10,7 @@ import json
 
 st.set_page_config(page_title="Emre Doğaltaş Entegre Yönetim Portalı", layout="wide")
 
-st.title("🗿 Entegre Mermer Üretim, Dizim, İhracat & Konteyner Portalı")
+st.title("🗿 Emre Doğaltaş Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
 st.markdown("---")
 
@@ -72,7 +72,7 @@ with tab1:
         breakage_rate = st.number_input("Kırılma / Seleksiyon Fire (%)", value=15.0, step=0.5)
         
         if sales_unit == "Adet (Pcs)":
-            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=3000, step=100)
+            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=4000, step=100)
             target_m2 = target_pcs * piece_m2
             st.caption(f"Adet Karşılığı Alan: **{target_m2:.2f} m²** ({target_m2 * 10.7639:.1f} sqft)")
         else:
@@ -155,7 +155,7 @@ with tab2:
     with col_d3:
         st.subheader("👥 Vardiya & Günlük Toplam Dizim")
         workers_count = st.number_input("Tezgahtaki İşçi Sayısı", value=2, step=1)
-        daily_total_sheets = st.number_input("Ekip Günlük Toplam Üretim (Adet/Parça)", value=12000, step=100)
+        daily_total_sheets = st.number_input("Ekip Günlük Toplam Üretim (Adet/Parça)", value=4000, step=100)
         
         daily_total_m2 = daily_total_sheets * piece_m2
         daily_crates = daily_total_sheets / crate_pcs_capacity if crate_pcs_capacity > 0 else 0
@@ -164,14 +164,14 @@ with tab2:
             needed_days = math.ceil(target_pcs / daily_total_sheets) if daily_total_sheets > 0 else 1
             st.metric(
                 "Günlük Ekip Dizim Kapasitesi", 
-                f"{daily_total_sheets:,.0f} Adet / Gün / {daily_crates:.1f} Kasa", 
+                f"{daily_total_sheets:,.0f} Adet / Gün / {daily_crates:.2f} Kasa", 
                 f"~{daily_total_m2:.2f} m² / Gün"
             )
         else:
             needed_days = math.ceil(target_m2 / daily_total_m2) if daily_total_m2 > 0 else 1
             st.metric(
                 "Günlük Ekip Dizim Kapasitesi", 
-                f"{daily_total_m2:.2f} m² / Gün / {daily_crates:.1f} Kasa", 
+                f"{daily_total_m2:.2f} m² / Gün / {daily_crates:.2f} Kasa", 
                 f"{daily_total_sheets:,.0f} Adet"
             )
             
@@ -186,15 +186,15 @@ with tab2:
             "Tip": product_type,
             "Satış Birimi": sales_unit,
             "Ebat (cm)": f"{p_length:.1f}x{p_width:.1f}x{p_thickness:.1f}",
-            "Parça m²": piece_m2,
-            "Kutu İçi Taş": pcs_per_box,
+            "Kutu İçi Adet": pcs_per_box,
+            "Kutu İçi m²": round(box_net_m2, 3),
             "Kasadaki Kutu": boxes_in_crate,
             "1 Kasa Kapasite (Adet)": crate_pcs_capacity,
             "1 Kasa Kapasite (m²)": crate_m2_capacity,
             "1 Kasa Ağırlık (kg)": crate_gross_weight,
             "Kalın Şinik / Kutu": thick_sinik_per_box,
             "İnce Şinik / Kutu": thin_sinik_per_box,
-            "Kasa Sayısı": int(needed_crates),  # Düzenlenebilir Sütun
+            "Kasa Sayısı": int(needed_crates),
             "Kasa L": crate_length,
             "Kasa W": crate_width,
             "Kasa H": crate_height,
@@ -203,7 +203,7 @@ with tab2:
         st.toast(f"{customer_name} - {product_name} sepete eklendi!", icon="✅")
 
 # ------------------------------------------
-# TAB 3: SIPARIS HAVUZU & PACKING LIST (Dinamik Kasa Düzenlemeli)
+# TAB 3: SIPARIS HAVUZU & PACKING LIST (Müşteri Ayrıştırmalı & Detaylı)
 # ------------------------------------------
 with tab3:
     st.header("🛒 Sipariş Havuzu & Çeki Listesi (Packing List)")
@@ -211,39 +211,28 @@ with tab3:
     if not st.session_state.cart:
         st.info("Sepet henüz boş. 1. ve 2. sekmelerden ürün ekleyebilirsiniz.")
     else:
-        st.caption("💡 **Son An Kasa Ayarı:** Konteynere göre kasa eklemek veya çıkarmak için aşağıdaki tablonun **'Kasa Sayısı'** sütununu doğrudan değiştirin. Tüm hesaplamalar anında güncellenecektir.")
+        st.caption("💡 **Ayar:** Konteynere göre kasa sayısını değiştirmek için aşağıdaki 'Kasa Sayısı' sütununu doğrudan güncelleyebilirsiniz.")
         
         df_cart = pd.DataFrame(st.session_state.cart)
 
-        # Tabloda düzenlemeye izin veren Data Editor
         edited_df = st.data_editor(
             df_cart,
             column_config={
                 "Kasa Sayısı": st.column_config.NumberColumn(
-                    "Kasa Sayısı (Değiştirilebilir)",
-                    help="Konteyneri doldurmak için kasa sayısını doğrudan artırıp azaltabilirsiniz.",
-                    min_value=1,
-                    max_value=100,
-                    step=1,
-                    format="%d 📦"
+                    "Kasa Sayısı",
+                    help="Kasa sayısını artırıp azaltabilirsiniz.",
+                    min_value=1, max_value=100, step=1, format="%d 📦"
                 ),
-                # Arka plan parametrelerini kullanıcıdan saklayabilir veya kilitli gösterebiliriz
-                "Parça m²": None,
-                "Kutu İçi Taş": None,
-                "Kasadaki Kutu": None,
-                "1 Kasa Kapasite (Adet)": None,
-                "1 Kasa Kapasite (m²)": None,
-                "1 Kasa Ağırlık (kg)": None,
-                "Kalın Şinik / Kutu": None,
-                "İnce Şinik / Kutu": None,
-                "Kasa L": None, "Kasa W": None, "Kasa H": None, "Stackable": None
+                "Kutu İçi Adet": st.column_config.NumberColumn("1 Kutu İçi Adet", format="%d Pcs"),
+                "Kutu İçi m²": st.column_config.NumberColumn("1 Kutu İçi m²", format="%.3f m²"),
+                "Kasadaki Kutu": st.column_config.NumberColumn("1 Kasadaki Kutu", format="%d Kutu"),
             },
             disabled=[col for col in df_cart.columns if col != "Kasa Sayısı"],
             use_container_width=True,
             hide_index=True
         )
 
-        # Düzenlenen Kasa Sayısına Göre Tüm Metraj, Kutu, Şinik ve Ağırlıkların Dinamik Yeniden Hesaplaması
+        # Güncel Değerleri Hesaplama
         updated_cart = []
         for index, row in edited_df.iterrows():
             crates = row["Kasa Sayısı"]
@@ -251,37 +240,26 @@ with tab3:
             crate_m2_cap = row["1 Kasa Kapasite (m²)"]
             crate_wt = row["1 Kasa Ağırlık (kg)"]
             boxes_per_crate = row["Kasadaki Kutu"]
-            thick_s = row["Kalın Şinik / Kutu"]
-            thin_s = row["İnce Şinik / Kutu"]
 
             tot_pcs = crates * crate_pcs_cap
             tot_m2 = crates * crate_m2_cap
             tot_boxes = crates * boxes_per_crate
             tot_wt = crates * crate_wt
-            tot_thick_sinik = tot_boxes * thick_s
-            tot_thin_sinik = tot_boxes * thin_s
 
             row_copy = dict(row)
             row_copy["Toplam Adet"] = tot_pcs
             row_copy["Toplam m²"] = round(tot_m2, 2)
             row_copy["Toplam Kutu"] = tot_boxes
             row_copy["Toplam Ağırlık (kg)"] = round(tot_wt, 1)
-            row_copy["Kalın Şinik Toplam"] = tot_thick_sinik
-            row_copy["İnce Şinik Toplam"] = tot_thin_sinik
-            
-            # Ekran metni
-            if row["Satış Birimi"] == "Adet (Pcs)":
-                row_copy["Sipariş Miktarı"] = f"{tot_pcs:,} Adet"
-            else:
-                row_copy["Sipariş Miktarı"] = f"{tot_m2:.2f} m²"
+            row_copy["Sipariş Miktarı"] = f"{tot_pcs:,} Adet" if row["Satış Birimi"] == "Adet (Pcs)" else f"{tot_m2:.2f} m²"
 
             updated_cart.append(row_copy)
 
-        # Değişiklikleri oturuma kaydet
         st.session_state.cart = updated_cart
         df_updated = pd.DataFrame(updated_cart)
 
-        # Görsel Metrikler
+        # Genel Özet
+        st.subheader("📊 Genel Konteyner Özeti")
         c_p1, c_p2, c_p3, c_p4 = st.columns(4)
         tot_crates = df_updated["Kasa Sayısı"].sum()
         tot_m2 = df_updated["Toplam m²"].sum()
@@ -289,10 +267,34 @@ with tab3:
         tot_kg = df_updated["Toplam Ağırlık (kg)"].sum()
         tot_boxes = df_updated["Toplam Kutu"].sum()
         
-        c_p1.metric("GÜNCEL KASA ADEDİ", f"{tot_crates} Kasa")
-        c_p2.metric("GÜNCEL TOPLAM MİKTAR", f"{tot_pcs:,.0f} Pcs (Adet)", f"{tot_m2:.2f} m² Toplam Alan")
-        c_p3.metric("GÜNCEL BRÜT AĞIRLIK", f"{tot_kg:,.0f} kg", f"{tot_kg * 2.20462:,.0f} lbs")
-        c_p4.metric("GÜNCEL KUTU SAYISI", f"{tot_boxes:,.0f} Kutu")
+        c_p1.metric("TOPLAM KASA", f"{tot_crates} Kasa")
+        c_p2.metric("TOPLAM METRAJ & ADET", f"{tot_pcs:,.0f} Pcs", f"{tot_m2:.2f} m²")
+        c_p3.metric("TOPLAM BRÜT AĞIRLIK", f"{tot_kg:,.0f} kg", f"{tot_kg * 2.20462:,.0f} lbs")
+        c_p4.metric("TOPLAM KUTU", f"{tot_boxes:,.0f} Kutu")
+
+        # ------------------------------------------
+        # MÜŞTERİ BAZLI AYRIŞTIRMA VE ÖZET
+        # ------------------------------------------
+        st.markdown("---")
+        st.subheader("🏢 Müşteri / Firma Bazlı Ayrıştırılmış Packing List")
+        
+        unique_customers = df_updated["Müşteri"].unique()
+        
+        for cust in unique_customers:
+            cust_df = df_updated[df_updated["Müşteri"] == cust]
+            
+            with st.expander(f"📌 Müşteri: **{cust}** (Sipariş Detayı İçin Tıklayın)", expanded=True):
+                st.dataframe(
+                    cust_df[["PO / Sipariş No", "Ürün Adı", "Ebat (cm)", "Satış Birimi", "Kutu İçi Adet", "Kasadaki Kutu", "Kasa Sayısı", "Toplam Kutu", "Sipariş Miktarı", "Toplam m²", "Toplam Ağırlık (kg)"]],
+                    use_container_width=True,
+                    hide_index=True
+                )
+                
+                c_c1, c_c2, c_c3, c_c4 = st.columns(4)
+                c_c1.markdown(f"**Müşteri Kasa:** {cust_df['Kasa Sayısı'].sum()} Kasa")
+                c_c2.markdown(f"**Müşteri Kutu:** {cust_df['Toplam Kutu'].sum():,.0f} Kutu")
+                c_c3.markdown(f"**Müşteri Miktar:** {cust_df['Toplam Adet'].sum():,.0f} Adet / {cust_df['Toplam m²'].sum():.2f} m²")
+                c_c4.markdown(f"**Müşteri Ağırlık:** {cust_df['Toplam Ağırlık (kg)'].sum():,.0f} kg")
 
         st.markdown("---")
         if st.button("🗑 Sepeti Temizle"):
