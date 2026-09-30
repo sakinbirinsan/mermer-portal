@@ -126,7 +126,7 @@ with tab2:
         st.warning(f"**Kalın Şinik İhtiyacı:** {total_thick_sinik:,.0f} Adet")
         st.warning(f"**İnce Şinik İhtiyacı:** {total_thin_sinik:,.0f} Adet")
 
-        with col_d3:
+    with col_d3:
         st.subheader("👥 Vardiya & Günlük Toplam Dizim")
         workers_count = st.number_input("Tezgahtaki İşçi Sayısı", value=6, step=1)
         daily_total_sheets = st.number_input("Ekip Günlük Toplam Dizim (File/Adet)", value=600, step=10)
