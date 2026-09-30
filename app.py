@@ -126,17 +126,26 @@ with tab2:
         st.warning(f"**Kalın Şinik İhtiyacı:** {total_thick_sinik:,.0f} Adet")
         st.warning(f"**İnce Şinik İhtiyacı:** {total_thin_sinik:,.0f} Adet")
 
-    with col_d3:
+        with col_d3:
         st.subheader("👥 Vardiya & Günlük Toplam Dizim")
         workers_count = st.number_input("Tezgahtaki İşçi Sayısı", value=6, step=1)
-        daily_total_sheets = st.number_input("Ekip Günlük Toplam Dizim (File/Adet)", value=500, step=10)
+        daily_total_sheets = st.number_input("Ekip Günlük Toplam Dizim (File/Adet)", value=600, step=10)
         
         sheet_m2 = (p_length / 100) * (p_width / 100)
         daily_total_m2 = daily_total_sheets * sheet_m2
+        
+        # Günlük kaç kasaya denk geldiğinin hesabı
+        daily_crates = daily_total_m2 / crate_m2_capacity if crate_m2_capacity > 0 else 0
         needed_days = math.ceil(target_m2 / daily_total_m2) if daily_total_m2 > 0 else 1
         
-        st.metric("Günlük Ekip Dizim Kapasitesi", f"{daily_total_m2:.2f} m² / Gün", f"{daily_total_sheets} File")
+        # Metrik başlığı ve yanına / X Kasa eklenmiş hali
+        st.metric(
+            "Günlük Ekip Dizim Kapasitesi", 
+            f"{daily_total_m2:.2f} m² / Gün / {daily_crates:.1f} Kasa", 
+            f"{daily_total_sheets} File"
+        )
         st.metric("Tahmini İmalat Süresi", f"{needed_days} İş Günü")
+
 
     # Ekleme Butonu
     st.markdown("---")
