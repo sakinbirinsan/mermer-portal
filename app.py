@@ -33,7 +33,7 @@ with tab1:
     
     col_cust1, col_cust2 = st.columns(2)
     with col_cust1:
-        customer_name = st.text_input("Müşteri / Şirket Adı", value="Apex Tile & Stone Corp.")
+        customer_name = st.text_input("Müşteri / Şirket Adı", value="Floor & Decor Stone Corp.")
     with col_cust2:
         po_number = st.text_input("Müşteri PO / Sipariş No", value="PO-2026-089")
 
