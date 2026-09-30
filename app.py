@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Karma Sipariş, Müşteri Takipli Üretim & Konteyner Portalı
+Emre Doğaltaş Entegre Yönetim Portalı 
 """
 
 import streamlit as st
@@ -8,9 +8,9 @@ import plotly.graph_objects as go
 import math
 import json
 
-st.set_page_config(page_title="Mermer & Doğaltaş Entegre Yönetim Portalı", layout="wide")
+st.set_page_config(page_title="Emre Doğaltaş Entegre Yönetim Portalı", layout="wide")
 
-st.title("🗿 Emre Doğaltaş Entegre Mermer Üretim, Dizim, İhracat & Konteyner Portalı")
+st.title("🗿Entegre Mermer Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
 st.markdown("---")
 
@@ -19,7 +19,7 @@ if "cart" not in st.session_state:
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📐 1. Ürün & Kasa Parametreleri", 
-    "🧩 2. Dizim Şefi & Vardiya Planı",
+    "🧩 2. Dizim, Şinik & Kutu Planı",
     "🛒 3. Sipariş Havuzu & Packing List", 
     "🚢 4. İhracat & Konteyner Doluluk",
     "💾 5. Yönetici Şablon & Onay Yönetimi"
@@ -79,7 +79,7 @@ with tab1:
         st.warning(f"**Gerekli Brüt Taş (Depodan Çıkacak):** {required_gross_m2:.2f} m²")
 
     with col3:
-        st.subheader("🪵 Ahşap Kasa ve Paketleme")
+        st.subheader("🪵 Ahşap Kasa Dış Ölçüleri")
         crate_length = st.number_input("Kasa Dış Boy (cm)", value=115.0, step=1.0)
         crate_width = st.number_input("Kasa Dış En (cm)", value=115.0, step=1.0)
         crate_height = st.number_input("Kasa Dış Yükseklik (cm)", value=90.0, step=1.0)
@@ -87,68 +87,60 @@ with tab1:
         crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=45.0, step=5.0)
         is_stackable = st.checkbox("Üst Üste İstiflenebilir (Stackable)", value=True)
 
-        if product_type == "Mozaik":
-            st.markdown("---")
-            st.markdown("**Mozaik Kutu / Kasalama:**")
-            box_m2 = st.number_input("1 Kutu İçi m²", value=0.93, step=0.05)
-            boxes_in_crate = st.number_input("1 Kasadaki Kutu Sayısı", value=54, step=1)
-            calc_crate_m2 = box_m2 * boxes_in_crate
-        else:
-            net_c_l = crate_length - 6.0
-            net_c_w = crate_width - 6.0
-            net_c_h = crate_height - 10.0
-            piece_m2 = (p_length / 100) * (p_width / 100)
-            fit_len = math.floor(net_c_l / p_length) if p_length > 0 else 1
-            fit_wid = math.floor(net_c_w / p_width) if p_width > 0 else 1
-            fit_hgt = math.floor(net_c_h / p_thickness) if p_thickness > 0 else 1
-            calc_crate_m2 = (fit_len * fit_wid * fit_hgt) * piece_m2
-
-        crate_m2_capacity = st.number_input("1 Kasa Kapasitesi (m²)", value=round(calc_crate_m2, 2))
-        piece_m2_val = (p_length / 100) * (p_width / 100)
-        total_pcs_in_crate = math.ceil(crate_m2_capacity / piece_m2_val) if piece_m2_val > 0 else 1
-        stone_weight = total_pcs_in_crate * piece_m2_val * (p_thickness / 100) * (density * 1000)
-        crate_gross_weight = stone_weight + crate_tare_kg
-
-        st.success(f"**1 Kasa Ağırlığı:** {crate_gross_weight:.1f} kg ({crate_gross_weight * 2.20462:,.0f} lbs)")
-
 # ------------------------------------------
-# TAB 2: DİZİM ŞEFİ & VARDİYA PLANLAMA
+# TAB 2: DİZİM, ŞİNİK & KUTULAMA PLANLAMA
 # ------------------------------------------
 with tab2:
-    st.header("🧩 Dizim Şefi Operasyon & Vardiya Paneli")
-    st.write("Bu bölüm fabrika dizim başı ve ustaların günlük imalat hızını planlaması içindir.")
+    st.header("🧩 Dizim Şefi & Kutulama Operasyon Paneli")
+    st.write("Kutu içi dizim detayları, şinik/şilte adetleri ve günlük imalat kapasitesi buradan planlanır.")
     
     col_d1, col_d2, col_d3 = st.columns(3)
     
     with col_d1:
-        st.subheader("⚙️ Dizim & Seperatör Detayı")
-        sinik_per_sheet = st.number_input("1 Fileye Giden Şinik / Taş Adedi", value=36, step=1)
-        seperator_type = st.selectbox("Seperatör / Kalıp Tipi", ["Plastik Seperatör", "Sünger Şerit", "Karton / Kağıt", "Yok / Dökme"])
-        glue_type = st.selectbox("Tutkal / File Tipi", ["Fiber File + Tutkal", "Kağıt Ön Yüz", "Nylon File"])
+        st.subheader("📦 Kutu & Kasalama Hesabı")
+        box_m2 = st.number_input("1 Kutu İçi Net m²", value=0.93, step=0.05)
+        boxes_in_crate = st.number_input("1 Kasadaki Kutu Sayısı", value=54, step=1)
+        
+        crate_m2_capacity = box_m2 * boxes_in_crate
+        needed_crates = math.ceil(target_m2 / crate_m2_capacity) if crate_m2_capacity > 0 else 1
+        total_boxes = needed_crates * boxes_in_crate
+        
+        piece_m2_val = (p_length / 100) * (p_width / 100)
+        total_pcs_in_crate = math.ceil(crate_m2_capacity / piece_m2_val) if piece_m2_val > 0 else 1
+        stone_weight = total_pcs_in_crate * piece_m2_val * (p_thickness / 100) * (density * 1000)
+        crate_gross_weight = stone_weight + crate_tare_kg
+        
+        st.info(f"**1 Kasa Kapasitesi:** {crate_m2_capacity:.2f} m²")
+        st.success(f"**1 Kasa Brüt Ağırlık:** {crate_gross_weight:.1f} kg")
 
     with col_d2:
-        st.subheader("👥 Vardiya & İşçilik")
-        workers_count = st.number_input("Dizim Tezgahındaki İşçi Sayısı", value=6, step=1)
-        daily_pcs_per_worker = st.number_input("İşçi Başı Günlük Dizim (File/Adet)", value=80, step=5)
+        st.subheader("📐 Kutu İçi Kalıp & Şinik/Şilte")
+        pcs_per_box = st.number_input("1 Kutu İçi Taş / Kalıp Adedi", value=10, step=1)
+        thick_sinik_per_box = st.number_input("1 Kutu İçi Kalın Şinik Adedi", value=1, step=1)
+        thin_sinik_per_box = st.number_input("1 Kutu İçi İnce Şinik Adedi", value=4, step=1)
         
-        sheet_m2 = (p_length / 100) * (p_width / 100)
-        daily_total_sheets = workers_count * daily_pcs_per_worker
-        daily_total_m2 = daily_total_sheets * sheet_m2
+        total_thick_sinik = total_boxes * thick_sinik_per_box
+        total_thin_sinik = total_boxes * thin_sinik_per_box
         
-        st.metric("Günlük Toplam Dizim Kapasitesi", f"{daily_total_m2:.2f} m² / Gün", f"{daily_total_sheets} File")
+        st.caption(f"Toplam Gerekli Kutu: **{total_boxes} Adet**")
+        st.warning(f"**Kalın Şinik İhtiyacı:** {total_thick_sinik:,.0f} Adet")
+        st.warning(f"**İnce Şinik İhtiyacı:** {total_thin_sinik:,.0f} Adet")
 
     with col_d3:
-        st.subheader("⏱ Termin & İmalat Süresi")
-        needed_days = math.ceil(target_m2 / daily_total_m2) if daily_total_m2 > 0 else 1
-        total_sinik_needed = math.ceil(target_m2 / sheet_m2) * sinik_per_sheet if sheet_m2 > 0 else 0
+        st.subheader("👥 Vardiya & Günlük Toplam Dizim")
+        workers_count = st.number_input("Tezgahtaki İşçi Sayısı", value=6, step=1)
+        daily_total_sheets = st.number_input("Ekip Günlük Toplam Dizim (File/Adet)", value=500, step=10)
         
-        st.metric("Tahmini Dizim Tamamlanma Süresi", f"{needed_days} İş Günü")
-        st.metric("Toplam Kullanılacak Şinik/Taş Parçası", f"{total_sinik_needed:,.0f} Adet")
+        sheet_m2 = (p_length / 100) * (p_width / 100)
+        daily_total_m2 = daily_total_sheets * sheet_m2
+        needed_days = math.ceil(target_m2 / daily_total_m2) if daily_total_m2 > 0 else 1
+        
+        st.metric("Günlük Ekip Dizim Kapasitesi", f"{daily_total_m2:.2f} m² / Gün", f"{daily_total_sheets} File")
+        st.metric("Tahmini İmalat Süresi", f"{needed_days} İş Günü")
 
     # Ekleme Butonu
     st.markdown("---")
     if st.button("➕ Bu Ürün & Müşteri Siparişini Sepete Ekle", use_container_width=True):
-        needed_crates = math.ceil(target_m2 / crate_m2_capacity) if crate_m2_capacity > 0 else 1
         st.session_state.cart.append({
             "Müşteri": customer_name,
             "PO / Sipariş No": po_number,
@@ -157,6 +149,9 @@ with tab2:
             "Ebat (cm)": f"{p_length:.1f}x{p_width:.1f}x{p_thickness:.1f}",
             "Günlük Dizim (m²)": round(daily_total_m2, 2),
             "Tahmini Dizim Süresi": f"{needed_days} Gün",
+            "Toplam Kutu": total_boxes,
+            "Kalın Şinik Adedi": total_thick_sinik,
+            "İnce Şinik Adedi": total_thin_sinik,
             "Kasa Ebatı (cm)": f"{crate_length}x{crate_width}x{crate_height}",
             "Kasa L": crate_length,
             "Kasa W": crate_width,
@@ -188,15 +183,15 @@ with tab3:
         tot_crates = df_cart["Kasa Sayısı"].sum()
         tot_m2 = df_cart["Toplam m²"].sum()
         tot_kg = df_cart["Toplam Ağırlık (kg)"].sum()
-        tot_gross_m2 = df_cart["Brüt Taş m²"].sum()
+        tot_boxes = df_cart["Toplam Kutu"].sum()
         
         c_p1.metric("Toplam Kasa Adedi", f"{tot_crates} Kasa")
         c_p2.metric("Toplam Net m²", f"{tot_m2:.2f} m²", f"{tot_m2 * 10.7639:,.0f} sqft")
         c_p3.metric("Toplam Brüt Ağırlık", f"{tot_kg:,.0f} kg", f"{tot_kg * 2.20462:,.0f} lbs")
-        c_p4.metric("Depodan Çıkacak Brüt Taş", f"{tot_gross_m2:.2f} m²")
+        c_p4.metric("Toplam Kutu Sayısı", f"{tot_boxes:,.0f} Kutu")
 
         st.markdown("---")
-        if st.button("🗑️️ Sepeti Temizle"):
+        if st.button("🗑 Sepeti Temizle"):
             st.session_state.cart = []
             st.rerun()
 
@@ -330,5 +325,5 @@ with tab5:
             
             if st.button("📥 Reçeteyi Aktif Sipariş Yap", use_container_width=True):
                 st.session_state.cart = data.get("sepet", [])
-                st.toast("Müşteri takipli reçete başarıyla yüklendi!", icon="🚀")
+                st.toast("Reçete başarıyla yüklendi!", icon="🚀")
                 st.rerun()
