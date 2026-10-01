@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Ürün Reçeteleri & Standart Şablon Destekli Tek Parça Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Dinamik Reçete Ekle/Sil Destekli Sürüm
 """
 
 import streamlit as st
@@ -15,42 +15,37 @@ st.set_page_config(
     layout="wide"
 )
 
-# Taslakların ve reçetelerin saklanacağı klasör
+# Klasör Yapılanması
 TEMPLATES_DIR = "saved_templates"
+PRESETS_DIR = "saved_presets"
 RECOVERY_FILE = os.path.join(TEMPLATES_DIR, "_auto_recovery.json")
 
-if not os.path.exists(TEMPLATES_DIR):
-    os.makedirs(TEMPLATES_DIR)
+for directory in [TEMPLATES_DIR, PRESETS_DIR]:
+    if not os.path.exists(directory):
+        os.makedirs(directory)
 
 st.title("🗿 Emre Doğaltaş Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
 st.markdown("---")
 
-# Hazır Ürün Reçeteleri (Preset Kütüphanesi)
-PRODUCT_PRESETS = {
-    "Özel / Manuel Giriş": None,
-    "[F&D] Marble Thin Black Flute (30.5x2.0x2.0 cm)": {
-        "customer_name": "Floor & Decor Stone Corp.",
-        "po_number": "PO-FD-BLACK-FLUTE",
-        "product_name": "Marble Thin Black Flute",
-        "product_type": "Flute / Moulding",
-        "sales_unit": "Adet (Pcs)",
-        "unit_system": "Metrik (cm / m²)",
-        "p_length": 30.5,
-        "p_width": 2.0,
-        "p_thickness": 2.0,
-        "density": 2.7,
-        "pcs_per_box": 24,
-        "boxes_in_crate": 36,
-        "thin_sinik_per_box": 1,
-        "thick_sinik_per_box": 0,
-        "crate_length": 101.0,
-        "crate_width": 101.0,
-        "crate_height": 40.0,
-        "crate_tare_kg": 35.0,
-        "target_pcs": 4000
-    }
-}
+# ------------------------------------------
+# REÇETE (PRESET) YÖNETİM FONKSİYONLARI
+# ------------------------------------------
+def load_all_presets():
+    """Sunucudaki tüm kayıtlı ürün reçetelerini yükler."""
+    presets = {}
+    if os.path.exists(PRESETS_DIR):
+        for fname in os.listdir(PRESETS_DIR):
+            if fname.endswith(".json"):
+                fpath = os.path.join(PRESETS_DIR, fname)
+                try:
+                    with open(fpath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        preset_key = data.get("preset_name", fname.replace(".json", ""))
+                        presets[preset_key] = data
+                except Exception:
+                    pass
+    return presets
 
 if "cart" not in st.session_state:
     st.session_state.cart = []
@@ -58,13 +53,13 @@ if "cart" not in st.session_state:
 if "draft_data" not in st.session_state:
     st.session_state.draft_data = {}
 
-# Arka Planda Kurtarma Verisi Kontrolü
+# Otomatik Kurtarma
 if os.path.exists(RECOVERY_FILE) and not st.session_state.cart:
     try:
         with open(RECOVERY_FILE, "r", encoding="utf-8") as rf:
             rec_data = json.load(rf)
             if rec_data.get("cart"):
-                st.warning("⚠️ **Son Oturum Kurtarıldı:** Uygulama beklenmedik şekilde kapandığı için son çalışmanız arka plandan getirildi.")
+                st.warning("⚠️ **Son Oturum Kurtarıldı:** Son çalışmanız arka plandan getirildi.")
                 if st.button("🔄 Son Kurtarılan Verileri Sepete Yükle"):
                     st.session_state.cart = rec_data.get("cart", [])
                     st.rerun()
@@ -130,22 +125,39 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ------------------------------------------
-# TAB 1: ÜRÜN REÇETESİ, STOK & İŞLEM HESABI
+# TAB 1: DİNAMİK REÇETE, ÜRÜN & STOK HESABI
 # ------------------------------------------
 with tab1:
-    st.header("1. Ürün Reçetesi, Müşteri, Stok Durumu ve Kasa Spesifikasyonları")
+    st.header("1. Ürün Reçeteleri (Preset), Müşteri ve Kasa Spesifikasyonları")
     
-    # REÇETE SEÇİM ALANI
-    selected_preset_name = st.selectbox(
-        "⭐ Kayıtlı Standart Ürün Reçetesi Seçin (Preset):",
-        list(PRODUCT_PRESETS.keys())
-    )
+    # REÇETE SEÇİM VE SİLME ALANI
+    all_presets = load_all_presets()
+    preset_options = ["Özel / Manuel Giriş"] + list(all_presets.keys())
     
-    preset_data = PRODUCT_PRESETS.get(selected_preset_name)
+    col_p1, col_p2 = st.columns([3, 1])
+    with col_p1:
+        selected_preset_name = st.selectbox(
+            "⭐ Kayıtlı Standart Ürün Reçeteleri (Preset):",
+            preset_options
+        )
     
+    preset_data = all_presets.get(selected_preset_name)
+    
+    with col_p2:
+        st.write("") # Hizalama boşluğu
+        if selected_preset_name != "Özel / Manuel Giriş" and preset_data:
+            if st.button("🗑️ Seçili Reçeteyi Kütüphaneden Sil", use_container_width=True):
+                preset_file_name = preset_data.get("file_name")
+                if preset_file_name:
+                    file_to_del = os.path.join(PRESETS_DIR, preset_file_name)
+                    if os.path.exists(file_to_del):
+                        os.remove(file_to_del)
+                        st.toast(f"'{selected_preset_name}' reçetesi silindi!", icon="🗑️")
+                        st.rerun()
+
     if preset_data:
-        st.success(f"✅ **{selected_preset_name}** standart ambalaj ve ebat değerleri yüklendi!")
-    
+        st.success(f"✅ **{selected_preset_name}** reçetesinin ambalaj ve ebat standartları yüklendi!")
+
     st.markdown("---")
     col_cust1, col_cust2 = st.columns(2)
     with col_cust1:
@@ -162,7 +174,7 @@ with tab1:
         default_pname = preset_data["product_name"] if preset_data else st.session_state.draft_data.get("product_name", "bullnose / pencil")
         product_name = st.text_input("Ürün Adı / Kodu", value=default_pname)
         
-        default_ptype_idx = ["Flute / Moulding", "Mozaik", "Ebatlı Mermer / Plaka"].index(preset_data["product_type"]) if preset_data else 0
+        default_ptype_idx = ["Flute / Moulding", "Mozaik", "Ebatlı Mermer / Plaka"].index(preset_data["product_type"]) if preset_data and "product_type" in preset_data else 0
         product_type = st.selectbox("Ürün Tipi", ["Flute / Moulding", "Mozaik", "Ebatlı Mermer / Plaka"], index=default_ptype_idx)
         
         sales_unit = st.radio("Satış / Hesaplama Birimi", ["Adet (Pcs)", "m² Bazlı"], horizontal=True)
@@ -173,9 +185,9 @@ with tab1:
             def_w = preset_data["p_width"] if preset_data else st.session_state.draft_data.get("p_width", 2.0)
             def_t = preset_data["p_thickness"] if preset_data else st.session_state.draft_data.get("p_thickness", 2.0)
             
-            p_length = st.number_input("Ürün / Parça Boyu (cm)", value=def_l, step=0.5)
-            p_width = st.number_input("Ürün / Parça Eni (cm)", value=def_w, step=0.1)
-            p_thickness = st.number_input("Kalınlık (cm)", value=def_t, step=0.1)
+            p_length = st.number_input("Ürün / Parça Boyu (cm)", value=float(def_l), step=0.5)
+            p_width = st.number_input("Ürün / Parça Eni (cm)", value=float(def_w), step=0.1)
+            p_thickness = st.number_input("Kalınlık (cm)", value=float(def_t), step=0.1)
         else:
             p_length_in = st.number_input("Ürün Boyu (inch)", value=12.0, step=0.5)
             p_width_in = st.number_input("Ürün Eni (inch)", value=0.78, step=0.05)
@@ -186,7 +198,7 @@ with tab1:
             p_thickness = p_thickness_in * 2.54
             
         def_density = preset_data["density"] if preset_data else 2.7
-        density = st.number_input("Taş Yoğunluğu (gr/cm³)", value=def_density, step=0.1)
+        density = st.number_input("Taş Yoğunluğu (gr/cm³)", value=float(def_density), step=0.1)
         piece_m2 = (p_length / 100) * (p_width / 100)
 
     with col2:
@@ -201,7 +213,7 @@ with tab1:
         def_tpcs = preset_data["target_pcs"] if preset_data else st.session_state.draft_data.get("target_pcs", 4000)
         
         if sales_unit == "Adet (Pcs)":
-            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=def_tpcs, step=100)
+            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=int(def_tpcs), step=100)
             target_m2 = target_pcs * piece_m2
             stock_qty = st.number_input("Mevcut Hazır Stok (Adet)", value=0, step=100)
             needed_prod_pcs = max(0, target_pcs - stock_qty)
@@ -236,34 +248,48 @@ with tab1:
         def_ch = preset_data["crate_height"] if preset_data else 40.0
         def_ctare = preset_data["crate_tare_kg"] if preset_data else 35.0
 
-        crate_length = st.number_input("Kasa Dış Boy (cm)", value=def_cl, step=1.0)
-        crate_width = st.number_input("Kasa Dış En (cm)", value=def_cw, step=1.0)
-        crate_height = st.number_input("Kasa Dış Yükseklik (cm)", value=def_ch, step=1.0)
-        crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=def_ctare, step=5.0)
+        crate_length = st.number_input("Kasa Dış Boy (cm)", value=float(def_cl), step=1.0)
+        crate_width = st.number_input("Kasa Dış En (cm)", value=float(def_cw), step=1.0)
+        crate_height = st.number_input("Kasa Dış Yükseklik (cm)", value=float(def_ch), step=1.0)
+        crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=float(def_ctare), step=5.0)
         is_stackable = st.checkbox("Üst Üste İstiflenebilir (Stackable)", value=True)
 
-    # GEÇİCİ KAYIT
+    # REÇETE KAYIT BÖLÜMÜ
     st.markdown("---")
-    col_s1, col_s2 = st.columns([1, 4])
-    with col_s1:
-        if st.button("💾 Girdileri Taslak Olarak Geçici Kaydet", key="save_tab1"):
-            st.session_state.draft_data.update({
+    st.subheader("💾 Ekrandaki Parametreleri Yeni Reçete Olarak Kaydet")
+    col_pr1, col_pr2 = st.columns([3, 1])
+    with col_pr1:
+        new_preset_title = st.text_input("Reçete Adı (Örn: [F&D] Marble Thin Black Flute)", value=f"[{customer_name}] {product_name} ({p_length}x{p_width} cm)")
+    with col_pr2:
+        st.write("")
+        if st.button("💾 Reçeteyi Kütüphaneye Ekle", use_container_width=True):
+            clean_filename = "".join([c for c in new_preset_title if c.isalnum() or c in (' ', '_', '-')]).rstrip() + ".json"
+            save_preset_payload = {
+                "preset_name": new_preset_title,
+                "file_name": clean_filename,
                 "customer_name": customer_name,
                 "po_number": po_number,
                 "product_name": product_name,
+                "product_type": product_type,
+                "sales_unit": sales_unit,
                 "p_length": p_length,
                 "p_width": p_width,
                 "p_thickness": p_thickness,
-                "target_pcs": target_pcs,
-                "target_m2": target_m2,
-                "stock_qty": stock_qty,
-                "needed_prod_pcs": needed_prod_pcs,
-                "needed_prod_m2": needed_prod_m2,
-                "required_ops": required_ops,
-                "preset_data": preset_data
-            })
-            save_auto_recovery()
-            st.toast("1. Sekme girdileri oturum hafızasına kaydedildi!", icon="💾")
+                "density": density,
+                "pcs_per_box": preset_data.get("pcs_per_box", 24) if preset_data else 24,
+                "boxes_in_crate": preset_data.get("boxes_in_crate", 36) if preset_data else 36,
+                "thin_sinik_per_box": preset_data.get("thin_sinik_per_box", 1) if preset_data else 1,
+                "thick_sinik_per_box": preset_data.get("thick_sinik_per_box", 0) if preset_data else 0,
+                "crate_length": crate_length,
+                "crate_width": crate_width,
+                "crate_height": crate_height,
+                "crate_tare_kg": crate_tare_kg,
+                "target_pcs": target_pcs
+            }
+            with open(os.path.join(PRESETS_DIR, clean_filename), "w", encoding="utf-8") as pf:
+                json.dump(save_preset_payload, pf, ensure_ascii=False, indent=4)
+            st.toast(f"'{new_preset_title}' reçetesi kaydedildi!", icon="✅")
+            st.rerun()
 
 # ------------------------------------------
 # TAB 2: DİZİM, ŞİNİK & KUTULAMA PLANLAMA
@@ -280,8 +306,8 @@ with tab2:
         def_pcs_box = preset_data["pcs_per_box"] if preset_data else 24
         def_boxes_crate = preset_data["boxes_in_crate"] if preset_data else 36
 
-        pcs_per_box = st.number_input("1 Kutu İçi Taş / Parça Adedi", value=def_pcs_box, step=1)
-        boxes_in_crate = st.number_input("1 Kasadaki Kutu Sayısı", value=def_boxes_crate, step=1)
+        pcs_per_box = st.number_input("1 Kutu İçi Taş / Parça Adedi", value=int(def_pcs_box), step=1)
+        boxes_in_crate = st.number_input("1 Kasadaki Kutu Sayısı", value=int(def_boxes_crate), step=1)
         
         box_net_m2 = pcs_per_box * piece_m2
         if sales_unit == "Adet (Pcs)":
@@ -314,8 +340,8 @@ with tab2:
         def_thick_s = preset_data["thick_sinik_per_box"] if preset_data else 0
         def_thin_s = preset_data["thin_sinik_per_box"] if preset_data else 1
 
-        thick_sinik_per_box = st.number_input("1 Kutu İçi Kalın Şinik Adedi", value=def_thick_s, step=1)
-        thin_sinik_per_box = st.number_input("1 Kutu İçi İnce Şinik Adedi", value=def_thin_s, step=1)
+        thick_sinik_per_box = st.number_input("1 Kutu İçi Kalın Şinik Adedi", value=int(def_thick_s), step=1)
+        thin_sinik_per_box = st.number_input("1 Kutu İçi İnce Şinik Adedi", value=int(def_thin_s), step=1)
         
         total_thick_sinik = total_boxes * thick_sinik_per_box
         total_thin_sinik = total_boxes * thin_sinik_per_box
@@ -390,7 +416,7 @@ with tab2:
             st.toast(f"{customer_name} - {product_name} sepete eklendi ve yedeklendi!", icon="✅")
 
 # ------------------------------------------
-# TAB 3: SIPARIS HAVUZU & PACKING LIST (Tekil Silme Desteği)
+# TAB 3: SIPARIS HAVUZU & PACKING LIST
 # ------------------------------------------
 with tab3:
     st.header("🛒 Sipariş Havuzu & Çeki Listesi (Packing List)")
@@ -623,7 +649,7 @@ with tab5:
         exec_notes = st.text_area("Fabrika & Paketleme Özel Talimatları", value="Kasalar fumigasyonlu ve alt kısmı forklift girişine uygun takozlu hazırlanacak. Nem alıcı jel konulacak.")
 
         if st.session_state.cart:
-            if st.button("☁️ Taslağı Portala / Sunucuya Kaydet", use_container_width=True):
+            if st.button("☁️️ Taslağı Portala / Sunucuya Kaydet", use_container_width=True):
                 payload = {
                     "proje_kodu": order_no,
                     "onay_durumu": approval_status,
