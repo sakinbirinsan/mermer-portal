@@ -11,7 +11,7 @@ import os
 
 st.set_page_config(
     page_title="Emre Doğaltaş Entegre Yönetim Portalı", 
-    page_icon="🏛️" 
+    page_icon="🏛️",
     layout="wide"
 )
 
