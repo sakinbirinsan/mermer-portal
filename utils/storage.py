@@ -4,6 +4,10 @@ import os
 STORAGE_FILE = "presets.json"
 AUTO_RECOVERY_FILE = "auto_recovery.json"
 
+# App.py tarafından çağrılan dizin sabitleri
+TEMPLATES_DIR = "templates"
+EXPORTS_DIR = "exports"
+
 # Görsellerdeki siparişlerden derlenen hazır varsayılan reçeteler
 DEFAULT_PRESETS = {
     "FD - MAR VAN ICE THIN FLUT": {
@@ -217,8 +221,9 @@ DEFAULT_PRESETS = {
 }
 
 def ensure_storage_dirs():
-    """Gerekli klasörlerin/dosyaların varlığını kontrol eder."""
-    pass
+    """Gerekli klasörlerin varlığını kontrol eder ve oluşturur."""
+    os.makedirs(TEMPLATES_DIR, exist_ok=True)
+    os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 def load_presets():
     """Kayıtlı reçeteleri yükler. Hazır reçeteleri her zaman temel olarak korur."""
