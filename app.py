@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Anlık Otomatik Kayıt & Crash Recovery Destekli Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Tekil Ürün Silme & Otomatik Kayıt Destekli Sürüm
 """
 
 import streamlit as st
@@ -80,7 +80,7 @@ else:
     st.sidebar.info("Henüz sunucuda kayıtlı taslak bulunmuyor.")
 
 st.sidebar.markdown("---")
-if st.sidebar.button("🗑️ Ekrandaki Sepeti Temizle", use_container_width=True):
+if st.sidebar.button("🗑️ Tüm Sepeti Temizle", use_container_width=True):
     st.session_state.cart = []
     if os.path.exists(RECOVERY_FILE):
         os.remove(RECOVERY_FILE)
@@ -167,7 +167,7 @@ with tab1:
         crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=35.0, step=5.0)
         is_stackable = st.checkbox("Üst Üste İstiflenebilir (Stackable)", value=True)
 
-    # KÜÇÜK GEÇİCİ KAYIT BUTONU
+    # GEÇİCİ KAYIT BUTONU
     st.markdown("---")
     col_s1, col_s2 = st.columns([1, 4])
     with col_s1:
@@ -289,10 +289,10 @@ with tab2:
                 "Stackable": "Evet" if is_stackable else "Hayır"
             })
             save_auto_recovery()
-            st.toast(f"{customer_name} - {product_name} sepete eklendi ve güvenle yedeklendi!", icon="✅")
+            st.toast(f"{customer_name} - {product_name} sepete eklendi ve yedeklendi!", icon="✅")
 
 # ------------------------------------------
-# TAB 3: SIPARIS HAVUZU & PACKING LIST
+# TAB 3: SIPARIS HAVUZU & PACKING LIST (Tekil Silme Desteği)
 # ------------------------------------------
 with tab3:
     st.header("🛒 Sipariş Havuzu & Çeki Listesi (Packing List)")
@@ -300,12 +300,29 @@ with tab3:
     if not st.session_state.cart:
         st.info("Sepet henüz boş. 1. ve 2. sekmelerden ürün ekleyebilirsiniz.")
     else:
-        st.caption("💡 **Ayar:** Konteynere göre kasa sayısını değiştirmek için aşağıdaki 'Kasa Sayısı' sütununu doğrudan güncelleyebilirsiniz.")
+        st.caption("💡 **Düzenleme & Silme:** Konteynere göre kasa sayısını değiştirebilir veya silmek istediğiniz ürünü tekil olarak listeden çıkarabilirsiniz.")
         
+        # TEKİL SİLME İÇİN SEÇENEK ALANI
+        col_del1, col_del2 = st.columns([3, 1])
+        with col_del1:
+            item_labels = [f"{i+1}. {item['Müşteri']} - {item['PO / Sipariş No']} | {item['Ürün Adı']} ({item['Ebat (cm)']})" for i, item in enumerate(st.session_state.cart)]
+            selected_item_to_delete = st.selectbox("Silinecek Kalemi Seçin:", item_labels)
+        with col_del2:
+            st.write("") # Hizalama boşluğu
+            if st.button("🗑️️ Seçili Siparişi Sil", use_container_width=True):
+                delete_index = item_labels.index(selected_item_to_delete)
+                deleted_item = st.session_state.cart.pop(delete_index)
+                save_auto_recovery()
+                st.toast(f"'{deleted_item['Ürün Adı']}' siparişten silindi!", icon="🗑️")
+                st.rerun()
+
+        st.markdown("---")
         df_cart = pd.DataFrame(st.session_state.cart)
 
+        # num_rows="dynamic" İLE TABLODAN DOĞRUDAN SATIR SİLME ÖZELLİĞİ
         edited_df = st.data_editor(
             df_cart,
+            num_rows="dynamic",
             column_config={
                 "Kasa Sayısı": st.column_config.NumberColumn(
                     "Kasa Sayısı",
