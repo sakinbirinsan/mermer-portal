@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Liman Bazlı Min/Max Tonaj Limitli Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Anlık Otomatik Kayıt & Crash Recovery Destekli Sürüm
 """
 
 import streamlit as st
@@ -11,8 +11,10 @@ import os
 
 st.set_page_config(page_title="Emre Doğaltaş Entegre Yönetim Portalı", layout="wide")
 
-# Taslakların sunucuda saklanacağı klasör
+# Taslakların ve geçici kurtarma verilerinin saklanacağı klasörler
 TEMPLATES_DIR = "saved_templates"
+RECOVERY_FILE = os.path.join(TEMPLATES_DIR, "_auto_recovery.json")
+
 if not os.path.exists(TEMPLATES_DIR):
     os.makedirs(TEMPLATES_DIR)
 
@@ -20,15 +22,41 @@ st.title("🗿 Emre Doğaltaş Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
 st.markdown("---")
 
+# Oturum Durumlarını Başlatma
 if "cart" not in st.session_state:
     st.session_state.cart = []
+
+if "draft_data" not in st.session_state:
+    st.session_state.draft_data = {}
+
+# Arka Planda Kurtarma Verisi Varsa Kullanıcıyı Bilgilendirme
+if os.path.exists(RECOVERY_FILE) and not st.session_state.cart:
+    try:
+        with open(RECOVERY_FILE, "r", encoding="utf-8") as rf:
+            rec_data = json.load(rf)
+            if rec_data.get("cart"):
+                st.warning("⚠️ **Son Oturum Kurtarıldı:** Uygulama beklenmedik şekilde kapandığı için son çalışmanız arka plandan getirildi.")
+                if st.button("🔄 Son Kurtarılan Verileri Sepete Yükle"):
+                    st.session_state.cart = rec_data.get("cart", [])
+                    st.rerun()
+    except Exception:
+        pass
+
+def save_auto_recovery():
+    """Tüm oturumu anlık olarak çökme ihtimaline karşı arka plana kaydeder."""
+    payload = {
+        "cart": st.session_state.cart,
+        "draft_data": st.session_state.draft_data
+    }
+    with open(RECOVERY_FILE, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=4)
 
 # ------------------------------------------
 # YAN MENÜ (SIDEBAR): HIZLI TASLAK YÜKLEME
 # ------------------------------------------
 st.sidebar.header("📁 Sunucudaki Kayıtlı Taslaklar")
 
-saved_files = [f for f in os.listdir(TEMPLATES_DIR) if f.endswith(".json")]
+saved_files = [f for f in os.listdir(TEMPLATES_DIR) if f.endswith(".json") and not f.startswith("_")]
 
 if saved_files:
     selected_template = st.sidebar.selectbox("Hızlı Taslak Seçin:", ["Seçiniz..."] + saved_files)
@@ -45,6 +73,7 @@ if saved_files:
             
         if st.sidebar.button("⚡ Bu Taslağı Ekrana Yükle", use_container_width=True):
             st.session_state.cart = t_data.get("sepet", [])
+            save_auto_recovery()
             st.toast(f"{selected_template} başarıyla yüklendi!", icon="🚀")
             st.rerun()
 else:
@@ -53,6 +82,8 @@ else:
 st.sidebar.markdown("---")
 if st.sidebar.button("🗑️ Ekrandaki Sepeti Temizle", use_container_width=True):
     st.session_state.cart = []
+    if os.path.exists(RECOVERY_FILE):
+        os.remove(RECOVERY_FILE)
     st.rerun()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -71,25 +102,25 @@ with tab1:
     
     col_cust1, col_cust2 = st.columns(2)
     with col_cust1:
-        customer_name = st.text_input("Müşteri / Şirket Adı", value="Floor & Decor Stone Corp.")
+        customer_name = st.text_input("Müşteri / Şirket Adı", value=st.session_state.draft_data.get("customer_name", "Floor & Decor Stone Corp."))
     with col_cust2:
-        po_number = st.text_input("Müşteri PO / Sipariş No", value="PO-2026-089")
+        po_number = st.text_input("Müşteri PO / Sipariş No", value=st.session_state.draft_data.get("po_number", "PO-2026-089"))
 
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("📦 Ürün Tanımı")
-        product_name = st.text_input("Ürün Adı / Kodu", value="bullnose / pencil")
+        product_name = st.text_input("Ürün Adı / Kodu", value=st.session_state.draft_data.get("product_name", "bullnose / pencil"))
         product_type = st.selectbox("Ürün Tipi", ["Flute / Moulding", "Mozaik", "Ebatlı Mermer / Plaka"])
         
         sales_unit = st.radio("Satış / Hesaplama Birimi", ["Adet (Pcs)", "m² Bazlı"], horizontal=True)
         unit_system = st.radio("Ölçü Birimi System", ["Metrik (cm / m²)", "Imperial (inch / sqft)"], horizontal=True)
         
         if "Metrik" in unit_system:
-            p_length = st.number_input("Ürün / Parça Boyu (cm)", value=30.5, step=0.5)
-            p_width = st.number_input("Ürün / Parça Eni (cm)", value=2.0, step=0.1)
-            p_thickness = st.number_input("Kalınlık (cm)", value=2.0, step=0.1)
+            p_length = st.number_input("Ürün / Parça Boyu (cm)", value=st.session_state.draft_data.get("p_length", 30.5), step=0.5)
+            p_width = st.number_input("Ürün / Parça Eni (cm)", value=st.session_state.draft_data.get("p_width", 2.0), step=0.1)
+            p_thickness = st.number_input("Kalınlık (cm)", value=st.session_state.draft_data.get("p_thickness", 2.0), step=0.1)
         else:
             p_length_in = st.number_input("Ürün Boyu (inch)", value=12.0, step=0.5)
             p_width_in = st.number_input("Ürün Eni (inch)", value=0.78, step=0.05)
@@ -109,11 +140,11 @@ with tab1:
         breakage_rate = st.number_input("Kırılma / Seleksiyon Fire (%)", value=15.0, step=0.5)
         
         if sales_unit == "Adet (Pcs)":
-            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=4000, step=100)
+            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=st.session_state.draft_data.get("target_pcs", 4000), step=100)
             target_m2 = target_pcs * piece_m2
             st.caption(f"Adet Karşılığı Alan: **{target_m2:.2f} m²** ({target_m2 * 10.7639:.1f} sqft)")
         else:
-            target_m2 = st.number_input("Net Sipariş Miktarı (m²)", value=150.0, step=10.0)
+            target_m2 = st.number_input("Net Sipariş Miktarı (m²)", value=st.session_state.draft_data.get("target_m2", 150.0), step=10.0)
             target_pcs = math.ceil(target_m2 / piece_m2) if piece_m2 > 0 else 0
             st.caption(f"m² Karşılığı Adet: **{target_pcs:,} Adet**")
         
@@ -135,6 +166,24 @@ with tab1:
         
         crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=35.0, step=5.0)
         is_stackable = st.checkbox("Üst Üste İstiflenebilir (Stackable)", value=True)
+
+    # KÜÇÜK GEÇİCİ KAYIT BUTONU
+    st.markdown("---")
+    col_s1, col_s2 = st.columns([1, 4])
+    with col_s1:
+        if st.button("💾 Girdileri Taslak Olarak Geçici Kaydet", key="save_tab1"):
+            st.session_state.draft_data.update({
+                "customer_name": customer_name,
+                "po_number": po_number,
+                "product_name": product_name,
+                "p_length": p_length,
+                "p_width": p_width,
+                "p_thickness": p_thickness,
+                "target_pcs": target_pcs,
+                "target_m2": target_m2
+            })
+            save_auto_recovery()
+            st.toast("1. Sekme girdileri oturum hafızasına geçici olarak kaydedildi!", icon="💾")
 
 # ------------------------------------------
 # TAB 2: DİZİM, ŞİNİK & KUTULAMA PLANLAMA
@@ -215,29 +264,32 @@ with tab2:
         st.metric("Tahmini İmalat Süresi", f"{needed_days} İş Günü")
 
     st.markdown("---")
-    if st.button("➕ Bu Ürün & Müşteri Siparişini Sepete Ekle", use_container_width=True):
-        st.session_state.cart.append({
-            "Müşteri": customer_name,
-            "PO / Sipariş No": po_number,
-            "Ürün Adı": product_name,
-            "Tip": product_type,
-            "Satış Birimi": sales_unit,
-            "Ebat (cm)": f"{p_length:.1f}x{p_width:.1f}x{p_thickness:.1f}",
-            "Kutu İçi Adet": pcs_per_box,
-            "Kutu İçi m²": round(box_net_m2, 3),
-            "Kasadaki Kutu": boxes_in_crate,
-            "1 Kasa Kapasite (Adet)": crate_pcs_capacity,
-            "1 Kasa Kapasite (m²)": crate_m2_capacity,
-            "1 Kasa Ağırlık (kg)": crate_gross_weight,
-            "Kalın Şinik / Kutu": thick_sinik_per_box,
-            "İnce Şinik / Kutu": thin_sinik_per_box,
-            "Kasa Sayısı": int(needed_crates),
-            "Kasa L": crate_length,
-            "Kasa W": crate_width,
-            "Kasa H": crate_height,
-            "Stackable": "Evet" if is_stackable else "Hayır"
-        })
-        st.toast(f"{customer_name} - {product_name} sepete eklendi!", icon="✅")
+    col_add1, col_add2 = st.columns([3, 1])
+    with col_add1:
+        if st.button("➕ Bu Ürün & Müşteri Siparişini Sepete Ekle", use_container_width=True):
+            st.session_state.cart.append({
+                "Müşteri": customer_name,
+                "PO / Sipariş No": po_number,
+                "Ürün Adı": product_name,
+                "Tip": product_type,
+                "Satış Birimi": sales_unit,
+                "Ebat (cm)": f"{p_length:.1f}x{p_width:.1f}x{p_thickness:.1f}",
+                "Kutu İçi Adet": pcs_per_box,
+                "Kutu İçi m²": round(box_net_m2, 3),
+                "Kasadaki Kutu": boxes_in_crate,
+                "1 Kasa Kapasite (Adet)": crate_pcs_capacity,
+                "1 Kasa Kapasite (m²)": crate_m2_capacity,
+                "1 Kasa Ağırlık (kg)": crate_gross_weight,
+                "Kalın Şinik / Kutu": thick_sinik_per_box,
+                "İnce Şinik / Kutu": thin_sinik_per_box,
+                "Kasa Sayısı": int(needed_crates),
+                "Kasa L": crate_length,
+                "Kasa W": crate_width,
+                "Kasa H": crate_height,
+                "Stackable": "Evet" if is_stackable else "Hayır"
+            })
+            save_auto_recovery()
+            st.toast(f"{customer_name} - {product_name} sepete eklendi ve güvenle yedeklendi!", icon="✅")
 
 # ------------------------------------------
 # TAB 3: SIPARIS HAVUZU & PACKING LIST
@@ -292,6 +344,7 @@ with tab3:
             updated_cart.append(row_copy)
 
         st.session_state.cart = updated_cart
+        save_auto_recovery()
         df_updated = pd.DataFrame(updated_cart)
 
         st.subheader("📊 Genel Konteyner Özeti")
@@ -329,7 +382,7 @@ with tab3:
                 c_c4.markdown(f"**Müşteri Ağırlık:** {cust_df['Toplam Ağırlık (kg)'].sum():,.0f} kg")
 
 # ------------------------------------------
-# TAB 4: İHRACAT & KONTEYNER DOLULUK (MIN/MAX TONAJ LİMİTLİ)
+# TAB 4: İHRACAT & KONTEYNER DOLULUK
 # ------------------------------------------
 with tab4:
     st.header("🚢 İhracat, Liman Bazlı Min/Max Tonaj Limitleri & 3D Visualizer")
@@ -354,7 +407,6 @@ with tab4:
             "Özel Manuel Limit Gir"
         ])
 
-    # Görsellerdeki tablodan tanımlanan dinamik Min/Max KG değerleri
     if "Savannah" in port_preset or "Houston" in port_preset:
         min_allowed_kg, max_allowed_kg = 24040, 27215
     elif "MORENO" in port_preset:
@@ -385,7 +437,6 @@ with tab4:
         m1.metric("Ağırlık Limiti Aralığı (Min - Max)", f"{min_allowed_kg:,.0f} kg - {max_allowed_kg:,.0f} kg", f"{min_allowed_kg*2.20462:,.0f} - {max_allowed_kg*2.20462:,.0f} lbs")
         m2.metric("Mevcut Konteyner Brüt Ağırlığı", f"{total_weight_kg:,.0f} kg", f"{total_weight_kg*2.20462:,.0f} lbs")
         
-        # 3 AŞAMALI DURUM KONTROLÜ
         if total_weight_kg < min_allowed_kg:
             status_text = "🟡 EKSİK YÜKLEME! (Min Limit Altında)"
             delta_msg = f"{min_allowed_kg - total_weight_kg:,.0f} kg daha yüklenmeli"
@@ -487,5 +538,6 @@ with tab5:
             
             if st.button("📥 Yüklenen Dosyayı Ekrana Aktar", use_container_width=True):
                 st.session_state.cart = data.get("sepet", [])
+                save_auto_recovery()
                 st.toast("Dış dosya başarıyla aktarıldı!", icon="🚀")
                 st.rerun()
