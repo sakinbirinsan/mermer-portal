@@ -7,9 +7,11 @@ TEMPLATES_DIR = "templates"
 PRESETS_DIR = "presets"
 EXPORTS_DIR = "exports"
 
-# Temel varsayılan reçeteler
+# tab1_product_specs.py ve diğer sekmelerin istediği TÜM alanları içeren eksiksiz varsayılan reçeteler
 DEFAULT_PRESETS = {
     "30.5x61x1.2 cm Marble Tile": {
+        "customer_name": "Floor & Decor Stone Corp.",
+        "product_code": "FD-MAR-3061",
         "sales_unit": "M²",
         "length_cm": 61.0,
         "width_cm": 30.5,
@@ -20,9 +22,12 @@ DEFAULT_PRESETS = {
         "saw_kerf_mm": 4.0,
         "pcs_per_box": 6,
         "boxes_in_crate": 40,
+        "box_tare_kg": 0.5,
         "crate_tare_kg": 40.0
     },
     "15x30.5x1 cm Travertine Tile": {
+        "customer_name": "Ionic Stone Ltd.",
+        "product_code": "ION-TRV-1530",
         "sales_unit": "M²",
         "length_cm": 30.5,
         "width_cm": 15.0,
@@ -33,6 +38,7 @@ DEFAULT_PRESETS = {
         "saw_kerf_mm": 4.0,
         "pcs_per_box": 10,
         "boxes_in_crate": 50,
+        "box_tare_kg": 0.4,
         "crate_tare_kg": 35.0
     }
 }
@@ -44,7 +50,7 @@ def ensure_storage_dirs():
     os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 def load_presets():
-    """Kayıtlı reçeteleri yükler."""
+    """Kayıtlı reçeteleri yükler ve eksik varsayılan alanları tamamlar."""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
@@ -54,8 +60,8 @@ def load_presets():
             return DEFAULT_PRESETS
     return DEFAULT_PRESETS
 
-# tab1_product_specs.py'nin çağırdığı takma isim (alias)
 def load_all_presets():
+    """tab1_product_specs.py tarafından çağrılan fonksiyon."""
     return load_presets()
 
 def save_presets(presets):
