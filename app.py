@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Taslak Silme Destekli Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Ürün Reçeteleri & Standart Şablon Destekli Tek Parça Sürüm
 """
 
 import streamlit as st
@@ -10,12 +10,12 @@ import json
 import os
 
 st.set_page_config(
-    page_title="Emre Doğaltaş Entegre Yönetim Portalı", 
-    page_icon="🏛️",
+    page_title="Emre Doğaltaş Entegre Yönetim Portalı",
+    page_icon="🗿",
     layout="wide"
 )
 
-# Taslakların saklanacağı klasör
+# Taslakların ve reçetelerin saklanacağı klasör
 TEMPLATES_DIR = "saved_templates"
 RECOVERY_FILE = os.path.join(TEMPLATES_DIR, "_auto_recovery.json")
 
@@ -25,6 +25,32 @@ if not os.path.exists(TEMPLATES_DIR):
 st.title("🗿 Emre Doğaltaş Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
 st.markdown("---")
+
+# Hazır Ürün Reçeteleri (Preset Kütüphanesi)
+PRODUCT_PRESETS = {
+    "Özel / Manuel Giriş": None,
+    "[F&D] Marble Thin Black Flute (30.5x2.0x2.0 cm)": {
+        "customer_name": "Floor & Decor Stone Corp.",
+        "po_number": "PO-FD-BLACK-FLUTE",
+        "product_name": "Marble Thin Black Flute",
+        "product_type": "Flute / Moulding",
+        "sales_unit": "Adet (Pcs)",
+        "unit_system": "Metrik (cm / m²)",
+        "p_length": 30.5,
+        "p_width": 2.0,
+        "p_thickness": 2.0,
+        "density": 2.7,
+        "pcs_per_box": 24,
+        "boxes_in_crate": 36,
+        "thin_sinik_per_box": 1,
+        "thick_sinik_per_box": 0,
+        "crate_length": 101.0,
+        "crate_width": 101.0,
+        "crate_height": 40.0,
+        "crate_tare_kg": 35.0,
+        "target_pcs": 4000
+    }
+}
 
 if "cart" not in st.session_state:
     st.session_state.cart = []
@@ -96,7 +122,7 @@ if st.sidebar.button("🗑️ Tüm Sepeti Temizle", use_container_width=True):
     st.rerun()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📐 1. Ürün, Stok & İşlem Parametreleri", 
+    "📐 1. Ürün, Reçete & Stok Parametreleri", 
     "🧩 2. Dizim, Şinik & Kutu Planı",
     "🛒 3. Sipariş Havuzu & Packing List", 
     "🚢 4. İhracat & Konteyner Doluluk",
@@ -104,32 +130,52 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ------------------------------------------
-# TAB 1: ÜRÜN, STOK & İŞLEM HESABI
+# TAB 1: ÜRÜN REÇETESİ, STOK & İŞLEM HESABI
 # ------------------------------------------
 with tab1:
-    st.header("1. Ürün, Müşteri, Stok Durumu ve Kasa Spesifikasyonları")
+    st.header("1. Ürün Reçetesi, Müşteri, Stok Durumu ve Kasa Spesifikasyonları")
     
+    # REÇETE SEÇİM ALANI
+    selected_preset_name = st.selectbox(
+        "⭐ Kayıtlı Standart Ürün Reçetesi Seçin (Preset):",
+        list(PRODUCT_PRESETS.keys())
+    )
+    
+    preset_data = PRODUCT_PRESETS.get(selected_preset_name)
+    
+    if preset_data:
+        st.success(f"✅ **{selected_preset_name}** standart ambalaj ve ebat değerleri yüklendi!")
+    
+    st.markdown("---")
     col_cust1, col_cust2 = st.columns(2)
     with col_cust1:
-        customer_name = st.text_input("Müşteri / Şirket Adı", value=st.session_state.draft_data.get("customer_name", "Floor & Decor Stone Corp."))
+        default_cust = preset_data["customer_name"] if preset_data else st.session_state.draft_data.get("customer_name", "Floor & Decor Stone Corp.")
+        customer_name = st.text_input("Müşteri / Şirket Adı", value=default_cust)
     with col_cust2:
-        po_number = st.text_input("Müşteri PO / Sipariş No", value=st.session_state.draft_data.get("po_number", "PO-2026-089"))
+        default_po = preset_data["po_number"] if preset_data else st.session_state.draft_data.get("po_number", "PO-2026-089")
+        po_number = st.text_input("Müşteri PO / Sipariş No", value=default_po)
 
-    st.markdown("---")
     col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("📦 Ürün & Satış Tanımı")
-        product_name = st.text_input("Ürün Adı / Kodu", value=st.session_state.draft_data.get("product_name", "bullnose / pencil"))
-        product_type = st.selectbox("Ürün Tipi", ["Flute / Moulding", "Mozaik", "Ebatlı Mermer / Plaka"])
+        default_pname = preset_data["product_name"] if preset_data else st.session_state.draft_data.get("product_name", "bullnose / pencil")
+        product_name = st.text_input("Ürün Adı / Kodu", value=default_pname)
+        
+        default_ptype_idx = ["Flute / Moulding", "Mozaik", "Ebatlı Mermer / Plaka"].index(preset_data["product_type"]) if preset_data else 0
+        product_type = st.selectbox("Ürün Tipi", ["Flute / Moulding", "Mozaik", "Ebatlı Mermer / Plaka"], index=default_ptype_idx)
         
         sales_unit = st.radio("Satış / Hesaplama Birimi", ["Adet (Pcs)", "m² Bazlı"], horizontal=True)
         unit_system = st.radio("Ölçü Birimi System", ["Metrik (cm / m²)", "Imperial (inch / sqft)"], horizontal=True)
         
         if "Metrik" in unit_system:
-            p_length = st.number_input("Ürün / Parça Boyu (cm)", value=st.session_state.draft_data.get("p_length", 30.5), step=0.5)
-            p_width = st.number_input("Ürün / Parça Eni (cm)", value=st.session_state.draft_data.get("p_width", 2.0), step=0.1)
-            p_thickness = st.number_input("Kalınlık (cm)", value=st.session_state.draft_data.get("p_thickness", 2.0), step=0.1)
+            def_l = preset_data["p_length"] if preset_data else st.session_state.draft_data.get("p_length", 30.5)
+            def_w = preset_data["p_width"] if preset_data else st.session_state.draft_data.get("p_width", 2.0)
+            def_t = preset_data["p_thickness"] if preset_data else st.session_state.draft_data.get("p_thickness", 2.0)
+            
+            p_length = st.number_input("Ürün / Parça Boyu (cm)", value=def_l, step=0.5)
+            p_width = st.number_input("Ürün / Parça Eni (cm)", value=def_w, step=0.1)
+            p_thickness = st.number_input("Kalınlık (cm)", value=def_t, step=0.1)
         else:
             p_length_in = st.number_input("Ürün Boyu (inch)", value=12.0, step=0.5)
             p_width_in = st.number_input("Ürün Eni (inch)", value=0.78, step=0.05)
@@ -139,7 +185,8 @@ with tab1:
             p_width = p_width_in * 2.54
             p_thickness = p_thickness_in * 2.54
             
-        density = st.number_input("Taş Yoğunluğu (gr/cm³)", value=2.7, step=0.1)
+        def_density = preset_data["density"] if preset_data else 2.7
+        density = st.number_input("Taş Yoğunluğu (gr/cm³)", value=def_density, step=0.1)
         piece_m2 = (p_length / 100) * (p_width / 100)
 
     with col2:
@@ -151,8 +198,10 @@ with tab1:
             default=["Ebatlama / Kesim Gerekli", "Dizim / File / Şinik Gerekli"]
         )
 
+        def_tpcs = preset_data["target_pcs"] if preset_data else st.session_state.draft_data.get("target_pcs", 4000)
+        
         if sales_unit == "Adet (Pcs)":
-            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=st.session_state.draft_data.get("target_pcs", 4000), step=100)
+            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=def_tpcs, step=100)
             target_m2 = target_pcs * piece_m2
             stock_qty = st.number_input("Mevcut Hazır Stok (Adet)", value=0, step=100)
             needed_prod_pcs = max(0, target_pcs - stock_qty)
@@ -182,14 +231,18 @@ with tab1:
 
     with col3:
         st.subheader("🪵 Ahşap Kasa Dış Ölçüleri")
-        crate_length = st.number_input("Kasa Dış Boy (cm)", value=101.0, step=1.0)
-        crate_width = st.number_input("Kasa Dış En (cm)", value=101.0, step=1.0)
-        crate_height = st.number_input("Kasa Dış Yükseklik (cm)", value=40.0, step=1.0)
-        
-        crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=35.0, step=5.0)
+        def_cl = preset_data["crate_length"] if preset_data else 101.0
+        def_cw = preset_data["crate_width"] if preset_data else 101.0
+        def_ch = preset_data["crate_height"] if preset_data else 40.0
+        def_ctare = preset_data["crate_tare_kg"] if preset_data else 35.0
+
+        crate_length = st.number_input("Kasa Dış Boy (cm)", value=def_cl, step=1.0)
+        crate_width = st.number_input("Kasa Dış En (cm)", value=def_cw, step=1.0)
+        crate_height = st.number_input("Kasa Dış Yükseklik (cm)", value=def_ch, step=1.0)
+        crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=def_ctare, step=5.0)
         is_stackable = st.checkbox("Üst Üste İstiflenebilir (Stackable)", value=True)
 
-    # GEÇİCİ KAYIT BUTONU
+    # GEÇİCİ KAYIT
     st.markdown("---")
     col_s1, col_s2 = st.columns([1, 4])
     with col_s1:
@@ -206,10 +259,11 @@ with tab1:
                 "stock_qty": stock_qty,
                 "needed_prod_pcs": needed_prod_pcs,
                 "needed_prod_m2": needed_prod_m2,
-                "required_ops": required_ops
+                "required_ops": required_ops,
+                "preset_data": preset_data
             })
             save_auto_recovery()
-            st.toast("1. Sekme girdileri oturum hafızasına geçici olarak kaydedildi!", icon="💾")
+            st.toast("1. Sekme girdileri oturum hafızasına kaydedildi!", icon="💾")
 
 # ------------------------------------------
 # TAB 2: DİZİM, ŞİNİK & KUTULAMA PLANLAMA
@@ -223,8 +277,11 @@ with tab2:
     with col_d1:
         st.subheader("📦 Kutu & Kasalama Hesabı")
         
-        pcs_per_box = st.number_input("1 Kutu İçi Taş / Parça Adedi", value=24, step=1)
-        boxes_in_crate = st.number_input("1 Kasadaki Kutu Sayısı", value=36, step=1)
+        def_pcs_box = preset_data["pcs_per_box"] if preset_data else 24
+        def_boxes_crate = preset_data["boxes_in_crate"] if preset_data else 36
+
+        pcs_per_box = st.number_input("1 Kutu İçi Taş / Parça Adedi", value=def_pcs_box, step=1)
+        boxes_in_crate = st.number_input("1 Kasadaki Kutu Sayısı", value=def_boxes_crate, step=1)
         
         box_net_m2 = pcs_per_box * piece_m2
         if sales_unit == "Adet (Pcs)":
@@ -254,8 +311,11 @@ with tab2:
 
     with col_d2:
         st.subheader("📐 Kutu İçi Kalıp & Şinik/Şilte")
-        thick_sinik_per_box = st.number_input("1 Kutu İçi Kalın Şinik Adedi", value=0, step=1)
-        thin_sinik_per_box = st.number_input("1 Kutu İçi İnce Şinik Adedi", value=1, step=1)
+        def_thick_s = preset_data["thick_sinik_per_box"] if preset_data else 0
+        def_thin_s = preset_data["thin_sinik_per_box"] if preset_data else 1
+
+        thick_sinik_per_box = st.number_input("1 Kutu İçi Kalın Şinik Adedi", value=def_thick_s, step=1)
+        thin_sinik_per_box = st.number_input("1 Kutu İçi İnce Şinik Adedi", value=def_thin_s, step=1)
         
         total_thick_sinik = total_boxes * thick_sinik_per_box
         total_thin_sinik = total_boxes * thin_sinik_per_box
@@ -267,7 +327,7 @@ with tab2:
     with col_d3:
         st.subheader("👥 Esnek Vardiya & Ürün Dizim Hızı")
         
-        is_dizim_needed = "Dizim / File / Şinik Gerekli" in st.session_state.draft_data.get("required_ops", ["Dizim / File / Şinik Gerekli"])
+        is_dizim_needed = "Dizim / File / Şinik Gerekli" in required_ops
         
         if not is_dizim_needed or needed_prod_pcs == 0:
             st.success("🎉 **Dizim İşçiliği Gerekmiyor!** (Ürün stokta hazır veya dizimsiz sevk edilecek)")
