@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Sunucu Kayıtlı & Taslak Yönetimli Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Liman Bazlı Min/Max Tonaj Limitli Sürüm
 """
 
 import streamlit as st
@@ -329,10 +329,10 @@ with tab3:
                 c_c4.markdown(f"**Müşteri Ağırlık:** {cust_df['Toplam Ağırlık (kg)'].sum():,.0f} kg")
 
 # ------------------------------------------
-# TAB 4: İHRACAT & KONTEYNER DOLULUK
+# TAB 4: İHRACAT & KONTEYNER DOLULUK (MIN/MAX TONAJ LİMİTLİ)
 # ------------------------------------------
 with tab4:
-    st.header("🚢 İhracat, ABD Karayolu Limiti & 3D Visualizer")
+    st.header("🚢 İhracat, Liman Bazlı Min/Max Tonaj Limitleri & 3D Visualizer")
     
     col_ex1, col_ex2 = st.columns(2)
     
@@ -344,24 +344,31 @@ with tab4:
         ])
     
     with col_ex2:
-        us_state_preset = st.selectbox("ABD Eyalet / Karayolu Ağırlık Sınırı", [
-            "Standart / Genel Limit (44,000 lbs / ~19,958 kg)",
-            "Ağır Tonaj İzinli / Overweight Permit (47,000 lbs / ~21,318 kg)",
-            "Sıkı Limitli Eyaletler (38,000 lbs / ~17,236 kg)",
-            "Maksimum Konteyner Kapasitesi (24,000 kg / ~52,900 lbs)",
-            "Özel Manuel Limit"
+        port_preset = st.selectbox("ABD Varış Limanı / Tonaj Şablonu (Weight Limits)", [
+            "Savannah 20' & 40' (Min: 24,040 kg / Max: 27,215 kg)",
+            "Houston 20' & 40' (Min: 24,040 kg / Max: 27,215 kg)",
+            "LA/Long Beach - 20' & 40' MORENO (Min: 18,143 kg / Max: 20,865 kg)",
+            "Baltimore - 20' (Min: 24,040 kg / Max: 27,216 kg)",
+            "Baltimore - 40' (Min: 19,505 kg / Max: 27,216 kg)",
+            "LA Transload - 20' & 40' CARSON (Min: 20,865 kg / Max: 26,762 kg)",
+            "Özel Manuel Limit Gir"
         ])
 
-    if "44,000" in us_state_preset:
-        max_allowed_kg = 19958
-    elif "47,000" in us_state_preset:
-        max_allowed_kg = 21318
-    elif "38,000" in us_state_preset:
-        max_allowed_kg = 17236
-    elif "Maksimum" in us_state_preset:
-        max_allowed_kg = 24000
+    # Görsellerdeki tablodan tanımlanan dinamik Min/Max KG değerleri
+    if "Savannah" in port_preset or "Houston" in port_preset:
+        min_allowed_kg, max_allowed_kg = 24040, 27215
+    elif "MORENO" in port_preset:
+        min_allowed_kg, max_allowed_kg = 18143, 20865
+    elif "Baltimore - 20'" in port_preset:
+        min_allowed_kg, max_allowed_kg = 24040, 27216
+    elif "Baltimore - 40'" in port_preset:
+        min_allowed_kg, max_allowed_kg = 19505, 27216
+    elif "CARSON" in port_preset:
+        min_allowed_kg, max_allowed_kg = 20865, 26762
     else:
-        max_allowed_kg = st.number_input("Özel Limit (kg)", value=20000)
+        col_m_in1, col_m_in2 = st.columns(2)
+        min_allowed_kg = col_m_in1.number_input("Özel Min Limit (kg)", value=18000)
+        max_allowed_kg = col_m_in2.number_input("Özel Max Limit (kg)", value=24000)
 
     if "20'" in container_type:
         c_l, c_w, c_h = 589.8, 235.2, 239.3
@@ -373,12 +380,26 @@ with tab4:
     if st.session_state.cart:
         df_cart = pd.DataFrame(st.session_state.cart)
         total_weight_kg = df_cart["Toplam Ağırlık (kg)"].sum()
-        weight_pct = (total_weight_kg / max_allowed_kg) * 100
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Ağırlık Limiti", f"{max_allowed_kg:,.0f} kg")
-        m2.metric("Mevcut Konteyner Ağırlığı", f"{total_weight_kg:,.0f} kg", f"%{weight_pct:.1f} Dolu")
-        m3.metric("İhracat Onay Statüsü", "UYGUN ✅" if weight_pct <= 100 else "AĞIR TONAJ UYARISI ⚠")
+        m1.metric("Ağırlık Limiti Aralığı (Min - Max)", f"{min_allowed_kg:,.0f} kg - {max_allowed_kg:,.0f} kg", f"{min_allowed_kg*2.20462:,.0f} - {max_allowed_kg*2.20462:,.0f} lbs")
+        m2.metric("Mevcut Konteyner Brüt Ağırlığı", f"{total_weight_kg:,.0f} kg", f"{total_weight_kg*2.20462:,.0f} lbs")
+        
+        # 3 AŞAMALI DURUM KONTROLÜ
+        if total_weight_kg < min_allowed_kg:
+            status_text = "🟡 EKSİK YÜKLEME! (Min Limit Altında)"
+            delta_msg = f"{min_allowed_kg - total_weight_kg:,.0f} kg daha yüklenmeli"
+            st.warning(f"**Liman Kuralı Uyarısı:** Yüklenen ağırlık minimum limitin ({min_allowed_kg:,.0f} kg) altındadır. Konteyner bu şekilde sevk edilemez.")
+        elif total_weight_kg > max_allowed_kg:
+            status_text = "🔴 AĞIR TONAJ UYARISI! (Max Limit Üstünde)"
+            delta_msg = f"{total_weight_kg - max_allowed_kg:,.0f} kg fazla yükleme yapıldı"
+            st.error(f"**Aşırı Yükleme Uyarısı:** Yüklenen ağırlık maksimum yasal limiti ({max_allowed_kg:,.0f} kg) aşmaktadır!")
+        else:
+            status_text = "🟢 UYGUN ✅ (İdeal Tonaj Aralığında)"
+            delta_msg = "Liman standartlarına tam uygun"
+            st.success("Konteyner ağırlığı seçilen varış limanı için yasal Min - Max aralığındadır.")
+            
+        m3.metric("İhracat Sevkiyat Onayı", status_text, delta_msg)
 
         # 3D Visualizer
         st.subheader("📦 3D Konteyner Yükleme Simülasyonu")
@@ -453,7 +474,6 @@ with tab5:
                 st.rerun()
                 
             st.markdown("---")
-            # İsteğe bağlı bilgisayara indirme seçeneği
             payload_json = json.dumps({"proje_kodu": order_no, "onay_durumu": approval_status, "yonetici_notu": exec_notes, "sepet": st.session_state.cart}, ensure_ascii=False, indent=4)
             st.download_button("💾 Bilgisayara .json Olarak İndir (Yedek)", data=payload_json, file_name=f"{order_no}_recete.json", mime="application/json", use_container_width=True)
 
