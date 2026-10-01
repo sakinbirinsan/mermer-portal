@@ -9,7 +9,11 @@ import math
 import json
 import os
 
-st.set_page_config(page_title="Emre Doğaltaş Entegre Yönetim Portalı", layout="wide")
+st.set_page_config(
+    page_title="Emre Doğaltaş Entegre Yönetim Portalı", 
+    page_icon="🏛️" 
+    layout="wide"
+)
 
 # Taslakların saklanacağı klasör
 TEMPLATES_DIR = "saved_templates"
