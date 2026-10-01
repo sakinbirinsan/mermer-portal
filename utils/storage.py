@@ -7,7 +7,23 @@ TEMPLATES_DIR = "templates"
 PRESETS_DIR = "presets"
 EXPORTS_DIR = "exports"
 
-# Tab 1-5 sekmelerindeki TÜM olası değişken isimleri (uzun ve kısa isimler dahil)
+class SafePresetDict(dict):
+    """
+    Koddaki herhangi bir sekme (Tab) sözlükte olmayan BİLİNMEYEN bir anahtar
+    çağırsa bile KeyError vermesini engelleyen akıllı koruma sınıfı.
+    """
+    def __getitem__(self, key):
+        if key in self:
+            return super().__getitem__(key)
+        # Eğer istenen anahtar sayısal bir ölçü/adet ise varsayılan float/int döndür
+        if any(x in key for x in ["length", "width", "thick", "m2", "kg", "density", "rate", "trim", "kerf", "size", "tare"]):
+            return 1.0
+        if any(x in key for x in ["pcs", "box", "crate", "count", "num"]):
+            return 1
+        # Metin alanları için varsayılan string
+        return ""
+
+# Bilinen tüm değişken eşleşmeleri
 DEFAULT_PRESET_FIELDS = {
     # Müşteri ve Ürün Bilgileri
     "customer_name": "Floor & Decor Stone Corp.",
@@ -19,14 +35,15 @@ DEFAULT_PRESET_FIELDS = {
     "sales_unit": "M²",
     "unit": "M²",
     
-    # Ebat ve Ölçüler (Kısa ve Uzun Varyasyonlar)
+    # Ebat ve Ölçüler (Tüm Varyasyonlar)
     "p_length": 61.0,
     "p_width": 30.5,
     "p_thick": 1.2,
-    "p_density": 2.7,
+    "p_thickness": 1.2,
     "length_cm": 61.0,
     "width_cm": 30.5,
     "thickness_cm": 1.2,
+    "p_density": 2.7,
     "density": 2.7,
     "c_length": 61.0,
     "c_width": 30.5,
@@ -38,7 +55,7 @@ DEFAULT_PRESET_FIELDS = {
     "fire_orani": 3.0,
     "tester_payi": 4.0,
     
-    # Ambalaj ve Paketleme (Kısa ve Uzun Varyasyonlar)
+    # Ambalaj ve Paketleme
     "pcs_box": 6,
     "pcs_per_box": 6,
     "box_crate": 40,
@@ -52,25 +69,6 @@ DEFAULT_PRESET_FIELDS = {
     "target_crates": 10
 }
 
-DEFAULT_PRESETS = {
-    "30.5x61x1.2 cm Marble Tile": {
-        **DEFAULT_PRESET_FIELDS
-    },
-    "15x30.5x1 cm Travertine Tile": {
-        **DEFAULT_PRESET_FIELDS,
-        "customer_name": "Ionic Stone Ltd.",
-        "po_number": "PO-2026-104",
-        "product_name": "15x30.5x1 cm Travertine Tile",
-        "product_code": "ION-TRV-1530",
-        "p_length": 30.5,
-        "p_width": 15.0,
-        "p_thick": 1.0,
-        "p_density": 2.4,
-        "pcs_box": 10,
-        "box_crate": 50
-    }
-}
-
 def ensure_storage_dirs():
     """Gerekli klasörleri oluşturur."""
     os.makedirs(TEMPLATES_DIR, exist_ok=True)
@@ -79,33 +77,49 @@ def ensure_storage_dirs():
 
 def load_presets():
     """
-    Kayıtlı reçeteleri yükler. Kod ister 'length_cm' desin ister 'p_length',
-    her ikisini de eksiksiz garanti eder.
+    Kayıtlı reçeteleri yükler. SafePresetDict sayesinde hiçbir KeyError yaşanmaz.
     """
-    presets = {}
+    raw_presets = {}
     
-    # 1. Varsayılan şablonları tam değişken haritasıyla doldur
-    for k, v in DEFAULT_PRESETS.items():
-        base = DEFAULT_PRESET_FIELDS.copy()
-        base.update(v)
-        presets[k] = base
-
-    # 2. Varsa saved presets.json dosyasından gelenleri de tamamla
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
-                saved = json.load(f)
-                for k, v in saved.items():
-                    if isinstance(v, dict):
-                        base = DEFAULT_PRESET_FIELDS.copy()
-                        base.update(v)
-                        presets[k] = base
-                    else:
-                        presets[k] = v
+                raw_presets = json.load(f)
         except Exception:
             pass
-            
-    return presets
+
+    # Varsayılan iki reçeteyi tanımla
+    defaults = {
+        "30.5x61x1.2 cm Marble Tile": {**DEFAULT_PRESET_FIELDS},
+        "15x30.5x1 cm Travertine Tile": {
+            **DEFAULT_PRESET_FIELDS,
+            "customer_name": "Ionic Stone Ltd.",
+            "po_number": "PO-2026-104",
+            "product_name": "15x30.5x1 cm Travertine Tile",
+            "product_code": "ION-TRV-1530",
+            "p_length": 30.5,
+            "p_width": 15.0,
+            "p_thick": 1.0,
+            "p_thickness": 1.0,
+            "pcs_box": 10,
+            "box_crate": 50
+        }
+    }
+
+    # Birleştir
+    combined = {**defaults, **raw_presets}
+    
+    # Her bir reçeteyi SafePresetDict ile zırhla
+    final_presets = {}
+    for name, data in combined.items():
+        if isinstance(data, dict):
+            safe_data = SafePresetDict(DEFAULT_PRESET_FIELDS)
+            safe_data.update(data)
+            final_presets[name] = safe_data
+        else:
+            final_presets[name] = data
+
+    return final_presets
 
 def load_all_presets():
     return load_presets()
