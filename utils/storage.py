@@ -216,14 +216,13 @@ DEFAULT_PRESETS = {
 }
 
 def load_presets():
-    """Kayıtlı reçeteleri yükler. Dosya yoksa hazır varsayılanları yükler."""
+    """Kayıtlı reçeteleri yükler. Varsayılan reçeteleri her zaman ana temel olarak sunar."""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-                # Varsayılanları saved ile birleştir (kullanıcı yenilerini silmesin)
-                merged = {**DEFAULT_PRESETS, **saved}
-                return merged
+                # Koddaki varsayılanları kaydolanlarla birleştir
+                return {**DEFAULT_PRESETS, **saved}
         except Exception:
             return DEFAULT_PRESETS
     return DEFAULT_PRESETS
