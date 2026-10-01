@@ -4,7 +4,7 @@ import os
 STORAGE_FILE = "presets.json"
 AUTO_RECOVERY_FILE = "auto_recovery.json"
 
-# App.py tarafından çağrılan dizin sabitleri
+# App.py ve sekmeler tarafından kullanılan dizin sabitleri
 TEMPLATES_DIR = "templates"
 EXPORTS_DIR = "exports"
 
@@ -226,7 +226,7 @@ def ensure_storage_dirs():
     os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 def load_presets():
-    """Kayıtlı reçeteleri yükler. Hazır reçeteleri her zaman temel olarak korur."""
+    """Kayıtlı reçeteleri yükler. Hazır varsayılan reçeteleri her zaman ekler."""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
@@ -278,3 +278,15 @@ def clear_auto_recovery():
             os.remove(AUTO_RECOVERY_FILE)
         except Exception:
             pass
+
+def list_templates():
+    """Şablon dosyalarını listeler."""
+    if not os.path.exists(TEMPLATES_DIR):
+        return []
+    return [f for f in os.listdir(TEMPLATES_DIR) if f.endswith(".xlsx") or f.endswith(".json")]
+
+def list_exports():
+    """Dışa aktarılan dosyaları listeler."""
+    if not os.path.exists(EXPORTS_DIR):
+        return []
+    return [f for f in os.listdir(EXPORTS_DIR)]
