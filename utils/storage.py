@@ -7,37 +7,40 @@ TEMPLATES_DIR = "templates"
 PRESETS_DIR = "presets"
 EXPORTS_DIR = "exports"
 
-# Tab 1-5 sekmelerinin isteyebileceği TÜM parametreleri barındıran eksiksiz varsayılan reçeteler
+# Tab 1-5 sekmelerinin isteyebileceği tüm temel parametreler
+DEFAULT_PRESET_FIELDS = {
+    "customer_name": "Floor & Decor Stone Corp.",
+    "po_number": "PO-2026-089",
+    "product_name": "bullnose / pencil",
+    "product_code": "FD-MAR-3061",
+    "sales_unit": "M²",
+    "length_cm": 61.0,
+    "width_cm": 30.5,
+    "thickness_cm": 1.2,
+    "density": 2.7,
+    "edge_trim": 2.0,
+    "breakage_rate": 3.0,
+    "saw_kerf_mm": 4.0,
+    "pcs_per_box": 6,
+    "boxes_in_crate": 40,
+    "box_tare_kg": 0.5,
+    "crate_tare_kg": 40.0
+}
+
 DEFAULT_PRESETS = {
     "30.5x61x1.2 cm Marble Tile": {
-        "customer_name": "Floor & Decor Stone Corp.",
-        "po_number": "PO-2026-089",
-        "product_code": "FD-MAR-3061",
-        "sales_unit": "M²",
-        "length_cm": 61.0,
-        "width_cm": 30.5,
-        "thickness_cm": 1.2,
-        "density": 2.7,
-        "edge_trim": 2.0,
-        "breakage_rate": 3.0,
-        "saw_kerf_mm": 4.0,
-        "pcs_per_box": 6,
-        "boxes_in_crate": 40,
-        "box_tare_kg": 0.5,
-        "crate_tare_kg": 40.0
+        **DEFAULT_PRESET_FIELDS,
+        "product_name": "30.5x61x1.2 cm Marble Tile",
+        "product_code": "FD-MAR-3061"
     },
     "15x30.5x1 cm Travertine Tile": {
+        **DEFAULT_PRESET_FIELDS,
         "customer_name": "Ionic Stone Ltd.",
         "po_number": "PO-2026-104",
+        "product_name": "15x30.5x1 cm Travertine Tile",
         "product_code": "ION-TRV-1530",
-        "sales_unit": "M²",
-        "length_cm": 30.5,
-        "width_cm": 15.0,
         "thickness_cm": 1.0,
         "density": 2.4,
-        "edge_trim": 2.0,
-        "breakage_rate": 3.0,
-        "saw_kerf_mm": 4.0,
         "pcs_per_box": 10,
         "boxes_in_crate": 50,
         "box_tare_kg": 0.4,
@@ -52,38 +55,33 @@ def ensure_storage_dirs():
     os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 def load_presets():
-    """Kayıtlı reçeteleri yükler ve eksik alanları varsayılan değerlerle tamamlar."""
-    presets = DEFAULT_PRESETS.copy()
+    """
+    Kayıtlı reçeteleri yükler. Eksik olan HERHANGİ bir alan varsa
+    varsayılan sözlükten otomatik tamamlar (KeyError engelleme).
+    """
+    presets = {}
+    
+    # 1. Varsayılanları yükle
+    for k, v in DEFAULT_PRESETS.items():
+        base = DEFAULT_PRESET_FIELDS.copy()
+        base.update(v)
+        presets[k] = base
+
+    # 2. Varsa kayıtlı presets.json dosyasını yükle ve eksik alanları yama yap
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
                 saved = json.load(f)
-                for key, val in saved.items():
-                    if isinstance(val, dict):
-                        # Varsayılan şablonu temel alıp eksik anahtarları güvenle tamamlar
-                        base = {
-                            "customer_name": "Floor & Decor Stone Corp.",
-                            "po_number": "PO-2026-000",
-                            "product_code": key,
-                            "sales_unit": "M²",
-                            "length_cm": 61.0,
-                            "width_cm": 30.5,
-                            "thickness_cm": 1.2,
-                            "density": 2.7,
-                            "edge_trim": 2.0,
-                            "breakage_rate": 3.0,
-                            "saw_kerf_mm": 4.0,
-                            "pcs_per_box": 6,
-                            "boxes_in_crate": 40,
-                            "box_tare_kg": 0.5,
-                            "crate_tare_kg": 40.0
-                        }
-                        base.update(val)
-                        presets[key] = base
+                for k, v in saved.items():
+                    if isinstance(v, dict):
+                        base = DEFAULT_PRESET_FIELDS.copy()
+                        base.update(v)
+                        presets[k] = base
                     else:
-                        presets[key] = val
+                        presets[k] = v
         except Exception:
-            return DEFAULT_PRESETS
+            pass
+            
     return presets
 
 def load_all_presets():
