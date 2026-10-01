@@ -217,11 +217,11 @@ DEFAULT_PRESETS = {
 }
 
 def ensure_storage_dirs():
-    """Gerekli klasörlerin varlığını kontrol eder."""
+    """Gerekli klasörlerin/dosyaların varlığını kontrol eder."""
     pass
 
 def load_presets():
-    """Kayıtlı reçeteleri yükler. Varsayılanları her zaman üzerine ekler."""
+    """Kayıtlı reçeteleri yükler. Hazır reçeteleri her zaman temel olarak korur."""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
@@ -239,6 +239,14 @@ def save_presets(presets):
         return True
     except Exception:
         return False
+
+def delete_preset(preset_name):
+    """Belirli bir reçeteyi siler."""
+    presets = load_presets()
+    if preset_name in presets:
+        del presets[preset_name]
+        return save_presets(presets)
+    return False
 
 def save_auto_recovery(data):
     """Otomatik kurtarma verisini kaydeder."""
