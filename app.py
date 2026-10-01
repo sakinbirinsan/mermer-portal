@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Tekil Ürün Silme & Otomatik Kayıt Destekli Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Stok Yönetimi & Esnek Dizim Vardiyalı Sürüm
 """
 
 import streamlit as st
@@ -11,7 +11,7 @@ import os
 
 st.set_page_config(page_title="Emre Doğaltaş Entegre Yönetim Portalı", layout="wide")
 
-# Taslakların ve geçici kurtarma verilerinin saklanacağı klasörler
+# Taslakların saklanacağı klasör
 TEMPLATES_DIR = "saved_templates"
 RECOVERY_FILE = os.path.join(TEMPLATES_DIR, "_auto_recovery.json")
 
@@ -22,14 +22,13 @@ st.title("🗿 Emre Doğaltaş Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
 st.markdown("---")
 
-# Oturum Durumlarını Başlatma
 if "cart" not in st.session_state:
     st.session_state.cart = []
 
 if "draft_data" not in st.session_state:
     st.session_state.draft_data = {}
 
-# Arka Planda Kurtarma Verisi Varsa Kullanıcıyı Bilgilendirme
+# Arka Planda Kurtarma Verisi Kontrolü
 if os.path.exists(RECOVERY_FILE) and not st.session_state.cart:
     try:
         with open(RECOVERY_FILE, "r", encoding="utf-8") as rf:
@@ -43,7 +42,6 @@ if os.path.exists(RECOVERY_FILE) and not st.session_state.cart:
         pass
 
 def save_auto_recovery():
-    """Tüm oturumu anlık olarak çökme ihtimaline karşı arka plana kaydeder."""
     payload = {
         "cart": st.session_state.cart,
         "draft_data": st.session_state.draft_data
@@ -87,7 +85,7 @@ if st.sidebar.button("🗑️ Tüm Sepeti Temizle", use_container_width=True):
     st.rerun()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📐 1. Ürün & Kasa Parametreleri", 
+    "📐 1. Ürün, Stok & İşlem Parametreleri", 
     "🧩 2. Dizim, Şinik & Kutu Planı",
     "🛒 3. Sipariş Havuzu & Packing List", 
     "🚢 4. İhracat & Konteyner Doluluk",
@@ -95,10 +93,10 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 ])
 
 # ------------------------------------------
-# TAB 1: ÜRÜN & KASA HESABI
+# TAB 1: ÜRÜN, STOK & İŞLEM HESABI
 # ------------------------------------------
 with tab1:
-    st.header("1. Ürün, Müşteri, Fire ve Ahşap Kasa Spesifikasyonları")
+    st.header("1. Ürün, Müşteri, Stok Durumu ve Kasa Spesifikasyonları")
     
     col_cust1, col_cust2 = st.columns(2)
     with col_cust1:
@@ -110,7 +108,7 @@ with tab1:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.subheader("📦 Ürün Tanımı")
+        st.subheader("📦 Ürün & Satış Tanımı")
         product_name = st.text_input("Ürün Adı / Kodu", value=st.session_state.draft_data.get("product_name", "bullnose / pencil"))
         product_type = st.selectbox("Ürün Tipi", ["Flute / Moulding", "Mozaik", "Ebatlı Mermer / Plaka"])
         
@@ -134,23 +132,36 @@ with tab1:
         piece_m2 = (p_length / 100) * (p_width / 100)
 
     with col2:
-        st.subheader("📈 Fire & Hammadde Metrajı")
+        st.subheader("🏬 Stok & İmalat Adımları")
+        
+        required_ops = st.multiselect(
+            "Yapılacak Operasyonlar",
+            ["Ebatlama / Kesim Gerekli", "Dizim / File / Şinik Gerekli", "Hazır Stok (Sadece Paketleme)"],
+            default=["Ebatlama / Kesim Gerekli", "Dizim / File / Şinik Gerekli"]
+        )
+
+        if sales_unit == "Adet (Pcs)":
+            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=st.session_state.draft_data.get("target_pcs", 4000), step=100)
+            target_m2 = target_pcs * piece_m2
+            stock_qty = st.number_input("Mevcut Hazır Stok (Adet)", value=0, step=100)
+            needed_prod_pcs = max(0, target_pcs - stock_qty)
+            needed_prod_m2 = needed_prod_pcs * piece_m2
+            st.caption(f"İmal Edilecek Net Miktar: **{needed_prod_pcs:,} Adet** ({needed_prod_m2:.2f} m²)")
+        else:
+            target_m2 = st.number_input("Net Sipariş Miktarı (m²)", value=st.session_state.draft_data.get("target_m2", 150.0), step=10.0)
+            target_pcs = math.ceil(target_m2 / piece_m2) if piece_m2 > 0 else 0
+            stock_qty = st.number_input("Mevcut Hazır Stok (m²)", value=0.0, step=10.0)
+            needed_prod_m2 = max(0.0, target_m2 - stock_qty)
+            needed_prod_pcs = math.ceil(needed_prod_m2 / piece_m2) if piece_m2 > 0 else 0
+            st.caption(f"İmal Edilecek Net Miktar: **{needed_prod_m2:.2f} m²** ({needed_prod_pcs:,} Adet)")
+
         saw_kerf = st.number_input("Testere Payı (mm)", value=1.0, step=0.5)
         edge_trim = st.number_input("Kenar Fire / Kalibre (%)", value=0.0, step=0.5)
         breakage_rate = st.number_input("Kırılma / Seleksiyon Fire (%)", value=15.0, step=0.5)
         
-        if sales_unit == "Adet (Pcs)":
-            target_pcs = st.number_input("Net Sipariş Miktarı (Adet)", value=st.session_state.draft_data.get("target_pcs", 4000), step=100)
-            target_m2 = target_pcs * piece_m2
-            st.caption(f"Adet Karşılığı Alan: **{target_m2:.2f} m²** ({target_m2 * 10.7639:.1f} sqft)")
-        else:
-            target_m2 = st.number_input("Net Sipariş Miktarı (m²)", value=st.session_state.draft_data.get("target_m2", 150.0), step=10.0)
-            target_pcs = math.ceil(target_m2 / piece_m2) if piece_m2 > 0 else 0
-            st.caption(f"m² Karşılığı Adet: **{target_pcs:,} Adet**")
-        
         total_fire_pct = edge_trim + breakage_rate + ((saw_kerf / 10) * 2)
-        required_gross_m2 = target_m2 * (1 + (total_fire_pct / 100))
-        required_gross_pcs = math.ceil(target_pcs * (1 + (total_fire_pct / 100)))
+        required_gross_m2 = needed_prod_m2 * (1 + (total_fire_pct / 100))
+        required_gross_pcs = math.ceil(needed_prod_pcs * (1 + (total_fire_pct / 100)))
         
         st.info(f"**Toplam Üretim Firesi:** %{total_fire_pct:.2f}")
         if sales_unit == "Adet (Pcs)":
@@ -180,7 +191,11 @@ with tab1:
                 "p_width": p_width,
                 "p_thickness": p_thickness,
                 "target_pcs": target_pcs,
-                "target_m2": target_m2
+                "target_m2": target_m2,
+                "stock_qty": stock_qty,
+                "needed_prod_pcs": needed_prod_pcs,
+                "needed_prod_m2": needed_prod_m2,
+                "required_ops": required_ops
             })
             save_auto_recovery()
             st.toast("1. Sekme girdileri oturum hafızasına geçici olarak kaydedildi!", icon="💾")
@@ -239,28 +254,37 @@ with tab2:
         st.warning(f"**İnce Şinik İhtiyacı:** {total_thin_sinik:,.0f} Adet")
 
     with col_d3:
-        st.subheader("👥 Vardiya & Günlük Toplam Dizim")
-        workers_count = st.number_input("Tezgahtaki İşçi Sayısı", value=2, step=1)
-        daily_total_sheets = st.number_input("Ekip Günlük Toplam Üretim (Adet/Parça)", value=4000, step=100)
+        st.subheader("👥 Esnek Vardiya & Ürün Dizim Hızı")
         
-        daily_total_m2 = daily_total_sheets * piece_m2
-        daily_crates = daily_total_sheets / crate_pcs_capacity if crate_pcs_capacity > 0 else 0
+        is_dizim_needed = "Dizim / File / Şinik Gerekli" in st.session_state.draft_data.get("required_ops", ["Dizim / File / Şinik Gerekli"])
         
-        if sales_unit == "Adet (Pcs)":
-            needed_days = math.ceil(target_pcs / daily_total_sheets) if daily_total_sheets > 0 else 1
-            st.metric(
-                "Günlük Ekip Dizim Kapasitesi", 
-                f"{daily_total_sheets:,.0f} Adet / Gün / {daily_crates:.2f} Kasa", 
-                f"~{daily_total_m2:.2f} m² / Gün"
-            )
+        if not is_dizim_needed or needed_prod_pcs == 0:
+            st.success("🎉 **Dizim İşçiliği Gerekmiyor!** (Ürün stokta hazır veya dizimsiz sevk edilecek)")
+            needed_days = 0
+            daily_total_sheets = 0
+            daily_crates = 0
         else:
-            needed_days = math.ceil(target_m2 / daily_total_m2) if daily_total_m2 > 0 else 1
-            st.metric(
-                "Günlük Ekip Dizim Kapasitesi", 
-                f"{daily_total_m2:.2f} m² / Gün / {daily_crates:.2f} Kasa", 
-                f"{daily_total_sheets:,.0f} Adet"
-            )
+            workers_count = st.number_input("Tezgahtaki İşçi Sayısı", value=2, step=1)
+            daily_total_sheets = st.number_input("Bu Ürün İçin Ekip Günlük Toplam Üretim (Adet/Parça)", value=4000, step=100)
             
+            daily_total_m2 = daily_total_sheets * piece_m2
+            daily_crates = daily_total_sheets / crate_pcs_capacity if crate_pcs_capacity > 0 else 0
+            
+            if sales_unit == "Adet (Pcs)":
+                needed_days = math.ceil(needed_prod_pcs / daily_total_sheets) if daily_total_sheets > 0 else 1
+                st.metric(
+                    "Günlük Ekip Dizim Kapasitesi", 
+                    f"{daily_total_sheets:,.0f} Adet / Gün / {daily_crates:.2f} Kasa", 
+                    f"~{daily_total_m2:.2f} m² / Gün"
+                )
+            else:
+                needed_days = math.ceil(needed_prod_m2 / daily_total_m2) if daily_total_m2 > 0 else 1
+                st.metric(
+                    "Günlük Ekip Dizim Kapasitesi", 
+                    f"{daily_total_m2:.2f} m² / Gün / {daily_crates:.2f} Kasa", 
+                    f"{daily_total_sheets:,.0f} Adet"
+                )
+                
         st.metric("Tahmini İmalat Süresi", f"{needed_days} İş Günü")
 
     st.markdown("---")
@@ -274,6 +298,9 @@ with tab2:
                 "Tip": product_type,
                 "Satış Birimi": sales_unit,
                 "Ebat (cm)": f"{p_length:.1f}x{p_width:.1f}x{p_thickness:.1f}",
+                "Stok Durumu": f"{stock_qty} ({sales_unit}) Stokta",
+                "İmal Edilecek": f"{needed_prod_pcs:,} Adet" if sales_unit == "Adet (Pcs)" else f"{needed_prod_m2:.2f} m²",
+                "İmalat Süresi": f"{needed_days} Gün",
                 "Kutu İçi Adet": pcs_per_box,
                 "Kutu İçi m²": round(box_net_m2, 3),
                 "Kasadaki Kutu": boxes_in_crate,
@@ -302,14 +329,13 @@ with tab3:
     else:
         st.caption("💡 **Düzenleme & Silme:** Konteynere göre kasa sayısını değiştirebilir veya silmek istediğiniz ürünü tekil olarak listeden çıkarabilirsiniz.")
         
-        # TEKİL SİLME İÇİN SEÇENEK ALANI
         col_del1, col_del2 = st.columns([3, 1])
         with col_del1:
             item_labels = [f"{i+1}. {item['Müşteri']} - {item['PO / Sipariş No']} | {item['Ürün Adı']} ({item['Ebat (cm)']})" for i, item in enumerate(st.session_state.cart)]
             selected_item_to_delete = st.selectbox("Silinecek Kalemi Seçin:", item_labels)
         with col_del2:
-            st.write("") # Hizalama boşluğu
-            if st.button("🗑️️ Seçili Siparişi Sil", use_container_width=True):
+            st.write("") 
+            if st.button("🗑 Seçili Siparişi Sil", use_container_width=True):
                 delete_index = item_labels.index(selected_item_to_delete)
                 deleted_item = st.session_state.cart.pop(delete_index)
                 save_auto_recovery()
@@ -319,7 +345,6 @@ with tab3:
         st.markdown("---")
         df_cart = pd.DataFrame(st.session_state.cart)
 
-        # num_rows="dynamic" İLE TABLODAN DOĞRUDAN SATIR SİLME ÖZELLİĞİ
         edited_df = st.data_editor(
             df_cart,
             num_rows="dynamic",
@@ -387,7 +412,7 @@ with tab3:
             
             with st.expander(f"📌 Müşteri: **{cust}** (Sipariş Detayı İçin Tıklayın)", expanded=True):
                 st.dataframe(
-                    cust_df[["PO / Sipariş No", "Ürün Adı", "Ebat (cm)", "Satış Birimi", "Kutu İçi Adet", "Kasadaki Kutu", "Kasa Sayısı", "Toplam Kutu", "Sipariş Miktarı", "Toplam m²", "Toplam Ağırlık (kg)"]],
+                    cust_df[["PO / Sipariş No", "Ürün Adı", "Ebat (cm)", "Stok Durumu", "İmalat Süresi", "Kasa Sayısı", "Toplam Kutu", "Sipariş Miktarı", "Toplam m²", "Toplam Ağırlık (kg)"]],
                     use_container_width=True,
                     hide_index=True
                 )
