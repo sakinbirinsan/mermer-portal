@@ -7,7 +7,7 @@ TEMPLATES_DIR = "templates"
 PRESETS_DIR = "presets"
 EXPORTS_DIR = "exports"
 
-# tab1_product_specs.py ve diğer sekmelerin istediği TÜM alanları içeren eksiksiz varsayılan reçeteler
+# Tab 1-5 sekmelerinin beklediği tüm alanları içeren varsayılan reçeteler
 DEFAULT_PRESETS = {
     "30.5x61x1.2 cm Marble Tile": {
         "customer_name": "Floor & Decor Stone Corp.",
@@ -50,7 +50,7 @@ def ensure_storage_dirs():
     os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 def load_presets():
-    """Kayıtlı reçeteleri yükler ve eksik varsayılan alanları tamamlar."""
+    """Kayıtlı reçeteleri yükler."""
     if os.path.exists(STORAGE_FILE):
         try:
             with open(STORAGE_FILE, "r", encoding="utf-8") as f:
@@ -61,7 +61,6 @@ def load_presets():
     return DEFAULT_PRESETS
 
 def load_all_presets():
-    """tab1_product_specs.py tarafından çağrılan fonksiyon."""
     return load_presets()
 
 def save_presets(presets):
@@ -81,9 +80,19 @@ def delete_preset(preset_name):
         return save_presets(presets)
     return False
 
-def save_auto_recovery(data):
-    """Otomatik kurtarma verisini kaydeder."""
+def save_auto_recovery(cart_or_data, draft_data=None):
+    """
+    Hem save_auto_recovery(data) hem de save_auto_recovery(cart, draft_data) 
+    şeklindeki iki farklı kullanımı da destekler.
+    """
     try:
+        if draft_data is not None:
+            data = {"cart": cart_or_data, "draft_data": draft_data}
+        elif isinstance(cart_or_data, dict):
+            data = cart_or_data
+        else:
+            data = {"cart": cart_or_data, "draft_data": {}}
+
         with open(AUTO_RECOVERY_FILE, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
     except Exception:
