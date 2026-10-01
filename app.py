@@ -1,5 +1,5 @@
 """
-Emre Doğaltaş Entegre Yönetim Portalı - Stok Yönetimi & Esnek Dizim Vardiyalı Sürüm
+Emre Doğaltaş Entegre Yönetim Portalı - Taslak Silme Destekli Sürüm
 """
 
 import streamlit as st
@@ -50,7 +50,7 @@ def save_auto_recovery():
         json.dump(payload, f, ensure_ascii=False, indent=4)
 
 # ------------------------------------------
-# YAN MENÜ (SIDEBAR): HIZLI TASLAK YÜKLEME
+# YAN MENÜ (SIDEBAR): HIZLI TASLAK YÜKLEME & SİLME
 # ------------------------------------------
 st.sidebar.header("📁 Sunucudaki Kayıtlı Taslaklar")
 
@@ -69,11 +69,18 @@ if saved_files:
         if t_data.get("yonetici_notu"):
             st.sidebar.caption(f"📝 **Not:** {t_data.get('yonetici_notu')}")
             
-        if st.sidebar.button("⚡ Bu Taslağı Ekrana Yükle", use_container_width=True):
-            st.session_state.cart = t_data.get("sepet", [])
-            save_auto_recovery()
-            st.toast(f"{selected_template} başarıyla yüklendi!", icon="🚀")
-            st.rerun()
+        col_sb1, col_sb2 = st.columns([3, 1])
+        with col_sb1:
+            if st.button("⚡ Ekrana Yükle", use_container_width=True):
+                st.session_state.cart = t_data.get("sepet", [])
+                save_auto_recovery()
+                st.toast(f"{selected_template} başarıyla yüklendi!", icon="🚀")
+                st.rerun()
+        with col_sb2:
+            if st.button("🗑️", help="Bu taslağı sunucudan kalıcı olarak sil", use_container_width=True):
+                os.remove(template_path)
+                st.toast(f"{selected_template} silindi!", icon="🗑️")
+                st.rerun()
 else:
     st.sidebar.info("Henüz sunucuda kayıtlı taslak bulunmuyor.")
 
