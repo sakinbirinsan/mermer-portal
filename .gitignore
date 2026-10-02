@@ -1,0 +1,6 @@
+saved_templates/
+saved_presets/
+saved_data/
+__pycache__/
+.streamlit/secrets.toml
+ 
