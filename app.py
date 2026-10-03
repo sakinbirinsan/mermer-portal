@@ -29,6 +29,7 @@ LOG_PHOTOS_DIR = os.path.join(DATA_DIR, "photos")
 STOCK_FILE = os.path.join(DATA_DIR, "stock.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "order_history.json")
 LOG_FILE = os.path.join(DATA_DIR, "daily_log.json")
+KESIM_FILE = os.path.join(DATA_DIR, "cut_log.json")
 
 for directory in [TEMPLATES_DIR, PRESETS_DIR, DATA_DIR, LOG_PHOTOS_DIR]:
     os.makedirs(directory, exist_ok=True)
@@ -184,6 +185,7 @@ if USE_DB:
 else:
     st.sidebar.caption("⚠️ Geçici yerel depolama: uygulama yeniden başlayınca veriler silinebilir.")
 
+top_bar = st.container()
 st.title("🗿 Emre Doğaltaş Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
 st.markdown("---")
@@ -262,15 +264,12 @@ if st.sidebar.button("🗑️ Tüm Sepeti Temizle", width="stretch"):
     st.session_state.pop("_rec_sig", None)
     st.rerun()
 
-tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📐 1. Ürün, Reçete & Stok Parametreleri", 
     "🧩 2. Dizim, Şinik & Kutu Planı",
     "🛒 3. Sipariş Havuzu & Packing List", 
     "🚢 4. İhracat & Konteyner Doluluk",
-    "💾 5. Yönetici Şablon & Onay Yönetimi",
-    "📦 6. Kasa & Kutu Stoku",
-    "👥 7. Müşteri Geçmişi",
-    "📒 8. Günlük Dizim Defteri"
+    "💾 5. Yönetici Şablon & Onay Yönetimi"
 ])
 
 # ------------------------------------------
@@ -849,7 +848,7 @@ with tab5:
 # ------------------------------------------
 # TAB 6: KASA & KUTU STOKU
 # ------------------------------------------
-with tab6:
+def panel_stok():
     st.header("📦 Kasa, Kutu ve Ambalaj Malzeme Stoku")
     stock = read_json(STOCK_FILE, None)
     if stock is None:
@@ -890,12 +889,12 @@ with tab6:
             if len(idx):
                 cur.loc[idx[0], "Adet"] -= need
         write_json(STOCK_FILE, cur.to_dict("records"))
-        st.rerun()
+        st.rerun(scope="fragment")
 
 # ------------------------------------------
 # TAB 7: MÜŞTERİ GEÇMİŞİ
 # ------------------------------------------
-with tab7:
+def panel_gecmis():
     st.header("👥 Müşteri Sipariş Geçmişi")
     st.caption("5. sekmeden kaydedilen her proje buraya otomatik işlenir. Aynı malzeme tekrar gelirse tek tıkla sepete ekleyin.")
     hist = read_json(HISTORY_FILE, [])
@@ -922,11 +921,12 @@ with tab7:
             st.session_state.cart.append(row)
             save_auto_recovery()
             st.toast("Önceki sipariş sepete eklendi!", icon="✅")
+            st.rerun()
 
 # ------------------------------------------
 # TAB 8: GÜNLÜK DİZİM DEFTERİ
 # ------------------------------------------
-with tab8:
+def panel_dizim():
     st.header("📒 Günlük Dizim Defteri")
     st.caption("Defterdeki günlük kayıtlar ve fotoğraflar burada tutulur; telefondan da girilebilir.")
     log = read_json(LOG_FILE, [])
@@ -952,7 +952,7 @@ with tab8:
                         "Adet": int(l_qty), "Kasa": float(l_crate), "İşçi": int(l_workers), "Not": l_note,
                         "Foto": photo_name, "Kaydeden": st.session_state.user_name})
             write_json(LOG_FILE, log)
-            st.rerun()
+            st.rerun(scope="fragment")
 
     if log:
         days = sorted({e["Tarih"] for e in log}, reverse=True)
@@ -971,7 +971,7 @@ with tab8:
         if st.button("🗑️ Seçili Kaydı Sil"):
             did = del_sel.split(" | ")[0]
             write_json(LOG_FILE, [e for e in log if e["id"] != did])
-            st.rerun()
+            st.rerun(scope="fragment")
 
 
 # ------------------------------------------
@@ -1078,3 +1078,97 @@ with st.sidebar.expander("📥 Başlangıç Reçeteleri"):
             write_many(new_items)
         st.session_state["seed_msg"] = f"{len(new_items)} yeni reçete eklendi."
         st.rerun()
+
+
+# ------------------------------------------
+# KESİM DEFTERİ
+# ------------------------------------------
+def panel_kesim():
+    st.caption("Nerede, ne kadar mal kesildi, kaç parça kırıldı/fire verdi buradan girilir.")
+    cuts = read_json(KESIM_FILE, [])
+
+    with st.form("kesim_form", clear_on_submit=True):
+        k1, k2, k3 = st.columns(3)
+        k_date = k1.date_input("Tarih", value=date.today())
+        k_place = k2.text_input("Kesim Yeri / Makine / Tezgah")
+        k_worker = k3.text_input("Kesen Usta")
+        k4, k5, k6 = st.columns(3)
+        k_cust = k4.text_input("Müşteri")
+        k_mat = k5.text_input("Malzeme (Taş Cinsi)")
+        k_prod = k6.text_input("Kesilen Ürün / Ebat")
+        k7, k8, k9, k10 = st.columns(4)
+        k_qty = k7.number_input("Kesilen Adet", min_value=0, step=10)
+        k_m2 = k8.number_input("Kesilen m²", min_value=0.0, step=1.0)
+        k_fire = k9.number_input("Kırık / Fire Adet", min_value=0, step=1)
+        k_plate = k10.number_input("Plaka / Blok Sayısı", min_value=0, step=1)
+        k_note = st.text_area("Not")
+        k_photo = st.file_uploader("Fotoğraf (isteğe bağlı)", type=["jpg", "jpeg", "png"], key="kesim_photo")
+        if st.form_submit_button("➕ Kesim Kaydı Ekle", width="stretch"):
+            photo_name = ""
+            if k_photo is not None:
+                photo_name = f"kesim_{k_date}_{uuid.uuid4().hex[:8]}.jpg"
+                save_photo(photo_name, k_photo.getvalue())
+            cuts.append({"id": uuid.uuid4().hex[:8], "Tarih": str(k_date), "Yer": k_place, "Usta": k_worker,
+                         "Müşteri": k_cust, "Malzeme": k_mat, "Ürün": k_prod, "Adet": int(k_qty), "m²": float(k_m2),
+                         "Fire": int(k_fire), "Plaka": int(k_plate), "Not": k_note, "Foto": photo_name,
+                         "Kaydeden": st.session_state.user_name})
+            write_json(KESIM_FILE, cuts)
+            st.rerun(scope="fragment")
+
+    if cuts:
+        days = sorted({e["Tarih"] for e in cuts}, reverse=True)
+        day = st.selectbox("Gün", days, key="kesim_day")
+        items = [e for e in cuts if e["Tarih"] == day]
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Kesilen Adet", f"{sum(e['Adet'] for e in items):,}")
+        m2.metric("Kesilen m²", f"{sum(e['m²'] for e in items):,.1f}")
+        m3.metric("Fire / Kırık", f"{sum(e['Fire'] for e in items):,}")
+        df = pd.DataFrame(items)
+        st.markdown("**Yere göre toplam**")
+        by_place = df.assign(Yer=df["Yer"].replace("", "—")).groupby("Yer")[["Adet", "m²", "Fire"]].sum().reset_index()
+        st.dataframe(by_place, width="stretch", hide_index=True)
+        st.markdown("**Günün kayıtları**")
+        st.dataframe(df.drop(columns=["id", "Foto"]), width="stretch", hide_index=True)
+        for e in items:
+            img_bytes = load_photo(e["Foto"]) if e.get("Foto") else None
+            if img_bytes:
+                with st.expander(f"📷 {e['Yer']} - {e['Ürün']}"):
+                    st.image(img_bytes)
+        del_sel = st.selectbox("Silinecek kayıt:", [f"{e['id']} | {e['Yer']} - {e['Ürün']} ({e['Adet']})" for e in items], key="kesim_del")
+        if st.button("🗑️ Seçili Kaydı Sil", key="kesim_del_btn"):
+            did = del_sel.split(" | ")[0]
+            write_json(KESIM_FILE, [e for e in cuts if e["id"] != did])
+            st.rerun(scope="fragment")
+
+# ------------------------------------------
+# SAĞ ÜST KÖŞE: DEFTERLER & STOK EKLENTİSİ
+# ------------------------------------------
+@st.dialog("📒 Günlük Dizim Defteri", width="large")
+def dlg_dizim():
+    panel_dizim()
+
+@st.dialog("✂️ Kesim Defteri", width="large")
+def dlg_kesim():
+    panel_kesim()
+
+@st.dialog("📦 Kasa, Kutu ve Ambalaj Stoku", width="large")
+def dlg_stok():
+    panel_stok()
+
+@st.dialog("👥 Müşteri Sipariş Geçmişi", width="large")
+def dlg_gecmis():
+    panel_gecmis()
+
+with top_bar:
+    st.markdown("<style>div[data-testid='stPopover']{display:flex;justify-content:flex-end;}</style>", unsafe_allow_html=True)
+    _sp, _pp = st.columns([2, 1])
+    with _pp:
+        with st.popover("📒 Defterler & Stok"):
+            if st.button("📒 Dizim Defteri", key="open_dizim", width="stretch"):
+                dlg_dizim()
+            if st.button("✂️ Kesim Defteri", key="open_kesim", width="stretch"):
+                dlg_kesim()
+            if st.button("📦 Kasa & Kutu Stoku", key="open_stok", width="stretch"):
+                dlg_stok()
+            if st.button("👥 Müşteri Geçmişi", key="open_gecmis", width="stretch"):
+                dlg_gecmis()
