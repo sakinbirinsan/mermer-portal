@@ -30,6 +30,7 @@ STOCK_FILE = os.path.join(DATA_DIR, "stock.json")
 HISTORY_FILE = os.path.join(DATA_DIR, "order_history.json")
 LOG_FILE = os.path.join(DATA_DIR, "daily_log.json")
 KESIM_FILE = os.path.join(DATA_DIR, "cut_log.json")
+ACTIVE_FILE = os.path.join(DATA_DIR, "active_cart.json")
 
 for directory in [TEMPLATES_DIR, PRESETS_DIR, DATA_DIR, LOG_PHOTOS_DIR]:
     os.makedirs(directory, exist_ok=True)
@@ -147,6 +148,23 @@ def load_photo(name):
             return pf.read()
     return None
 
+def tg_on():
+    try:
+        return bool(st.secrets["TELEGRAM_TOKEN"] and st.secrets["TELEGRAM_CHAT_ID"])
+    except Exception:
+        return False
+
+def notify(text):
+    """Telegram grubuna mesaj gönderir. Bağlı değilse sessizce atlar."""
+    if not tg_on():
+        return False
+    try:
+        r = requests.post(f"https://api.telegram.org/bot{st.secrets['TELEGRAM_TOKEN']}/sendMessage",
+                          json={"chat_id": st.secrets["TELEGRAM_CHAT_ID"], "text": text}, timeout=10)
+        return r.ok
+    except Exception:
+        return False
+
 def log_history(project, cart):
     """Kaydedilen sipariş kalemlerini müşteri geçmişine yazar (aynı proje tekrar kaydedilirse günceller)."""
     hist = [h for h in read_json(HISTORY_FILE, []) if h.get("Proje") != project]
@@ -165,20 +183,47 @@ def _get_app_password():
     return pw or os.environ.get("APP_PASSWORD")
 
 APP_PASSWORD = _get_app_password()
-if APP_PASSWORD and not st.session_state.get("auth_ok"):
-    st.title("🗿 Emre Doğaltaş Entegre Yönetim Portalı")
-    pw_in = st.text_input("Giriş şifresi", type="password")
-    if st.button("Giriş"):
-        if hmac.compare_digest(pw_in.encode(), str(APP_PASSWORD).encode()):
-            st.session_state.auth_ok = True
-            st.rerun()
-        else:
-            st.error("Hatalı şifre.")
-    st.stop()
 
-if "user_name" not in st.session_state:
-    st.session_state.user_name = "genel"
-st.sidebar.text_input("👤 Kullanıcı adınız", key="user_name", help="Her kullanıcının otomatik kurtarma sepeti ayrı tutulur.")
+def _get_users():
+    try:
+        return {str(k): str(v) for k, v in dict(st.secrets["users"]).items()}
+    except Exception:
+        return {}
+
+USERS = _get_users()
+if USERS:
+    if not st.session_state.get("auth_ok"):
+        st.title("🗿 Emre Doğaltaş Entegre Yönetim Portalı")
+        u_in = st.selectbox("Kullanıcı", list(USERS.keys()))
+        pw_in = st.text_input("Şifre", type="password")
+        if st.button("Giriş"):
+            if hmac.compare_digest(pw_in.encode(), USERS[u_in].encode()):
+                st.session_state.auth_ok = True
+                st.session_state.user_name = u_in
+                st.rerun()
+            else:
+                st.error("Hatalı şifre.")
+        st.stop()
+    st.sidebar.markdown(f"👤 **{st.session_state.user_name}**")
+    if st.sidebar.button("Çıkış yap"):
+        for k in ("auth_ok", "user_name", "_active_sig", "_rec_sig"):
+            st.session_state.pop(k, None)
+        st.session_state.cart = []
+        st.rerun()
+else:
+    if APP_PASSWORD and not st.session_state.get("auth_ok"):
+        st.title("🗿 Emre Doğaltaş Entegre Yönetim Portalı")
+        pw_in = st.text_input("Giriş şifresi", type="password")
+        if st.button("Giriş"):
+            if hmac.compare_digest(pw_in.encode(), str(APP_PASSWORD).encode()):
+                st.session_state.auth_ok = True
+                st.rerun()
+            else:
+                st.error("Hatalı şifre.")
+        st.stop()
+    if "user_name" not in st.session_state:
+        st.session_state.user_name = "genel"
+    st.sidebar.text_input("👤 Kullanıcı adınız", key="user_name", help="Her kullanıcının otomatik kurtarma sepeti ayrı tutulur.")
 RECOVERY_FILE = os.path.join(TEMPLATES_DIR, f"_recovery_{safe_name(st.session_state.user_name, 'genel')}.json")
 if USE_DB:
     st.sidebar.caption("☁️ Veritabanı bağlı: veriler kalıcı olarak saklanıyor.")
@@ -207,6 +252,31 @@ if "cart" not in st.session_state:
 if "draft_data" not in st.session_state:
     st.session_state.draft_data = {}
 
+# Ortak aktif sepet (herkes aynı packing list havuzunu görür)
+def _cart_sig(cart):
+    return json.dumps(cart, ensure_ascii=False, sort_keys=True, default=str) if cart else ""
+
+def push_active_cart():
+    sig = _cart_sig(st.session_state.cart)
+    if sig == st.session_state.get("_active_sig"):
+        return
+    write_json(ACTIVE_FILE, {"cart": st.session_state.cart, "sig": sig,
+                             "by": st.session_state.user_name, "at": str(date.today())}, clear=False)
+    st.session_state["_active_sig"] = sig
+
+def sync_active_cart():
+    db = read_json(ACTIVE_FILE, {}, fresh=True)
+    db_sig = db.get("sig", "")
+    mine = st.session_state.get("_active_sig")
+    cur = _cart_sig(st.session_state.cart)
+    if mine is None or (cur == mine and db_sig != mine):
+        st.session_state.cart = db.get("cart", []) if db_sig else []
+        st.session_state["_active_sig"] = db_sig
+    elif cur != mine:
+        push_active_cart()
+
+sync_active_cart()
+
 # Otomatik Kurtarma
 rec_data = read_json(RECOVERY_FILE, {}, fresh=True) if not st.session_state.cart else {}
 if rec_data.get("cart"):
@@ -216,6 +286,7 @@ if rec_data.get("cart"):
         st.rerun()
 
 def save_auto_recovery():
+    push_active_cart()
     payload = {"cart": st.session_state.cart, "draft_data": st.session_state.draft_data}
     sig = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
     if st.session_state.get("_rec_sig") == sig:
@@ -262,6 +333,8 @@ if st.sidebar.button("🗑️ Tüm Sepeti Temizle", width="stretch"):
     st.session_state.cart = []
     delete_json(RECOVERY_FILE, clear=False)
     st.session_state.pop("_rec_sig", None)
+    write_json(ACTIVE_FILE, {"cart": [], "sig": "", "by": st.session_state.user_name, "at": str(date.today())}, clear=False)
+    st.session_state["_active_sig"] = ""
     st.rerun()
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -853,6 +926,7 @@ with tab5:
                 save_path = os.path.join(TEMPLATES_DIR, f"{safe_name(order_no)}.json")
                 log_history(order_no, st.session_state.cart)
                 write_json(save_path, payload)
+                notify(f"📝 {st.session_state.user_name} taslağı kaydetti: {order_no}")
                 
                 st.success(f"✅ '{order_no}' isimli taslak sunucuya başarıyla kaydedildi! Sol yan menüden herkes erişebilir.")
                 st.rerun()
@@ -899,6 +973,9 @@ def panel_stok():
     if st.button("💾 Stoğu Kaydet", width="stretch"):
         write_json(STOCK_FILE, edited_stock.to_dict("records"))
         st.toast("Stok kaydedildi!", icon="✅")
+        _low = edited_stock[edited_stock["Adet"] < edited_stock["Minimum"]]
+        if len(_low):
+            notify("⚠️ Stok minimumun altında: " + ", ".join(f"{r.Kalem} ({r.Adet:g}/{r.Minimum:g})" for r in _low.itertuples()))
 
     low = edited_stock[edited_stock["Adet"] < edited_stock["Minimum"]]
     for _, r in low.iterrows():
@@ -1008,6 +1085,7 @@ def panel_dizim():
                         "Adet": int(l_qty), "Kasa": float(l_crate), "İşçi": int(l_workers), "Not": l_note,
                         "Foto": photo_name, "Kaydeden": st.session_state.user_name})
             write_json(LOG_FILE, log)
+            notify(f"📒 Dizim: {l_place} | {l_cust} {l_prod} | {int(l_qty)} adet, {l_crate:g} kasa ({st.session_state.user_name})")
             st.rerun(scope="fragment")
 
     if log:
@@ -1259,6 +1337,7 @@ def panel_kesim():
                          "Fire": int(k_fire), "Plaka": int(k_plate), "Not": k_note, "Foto": photo_name,
                          "Kaydeden": st.session_state.user_name})
             write_json(KESIM_FILE, cuts)
+            notify(f"✂️ Kesim: {k_place} | {k_mat} {k_prod} | {int(k_qty)} adet, fire {int(k_fire)} ({st.session_state.user_name})")
             st.rerun(scope="fragment")
 
     if cuts:
@@ -1305,6 +1384,17 @@ def dlg_stok():
 def dlg_gecmis():
     panel_gecmis()
 
+@st.dialog("📣 Duyuru Gönder", width="large")
+def dlg_duyuru():
+    if not tg_on():
+        st.info("Telegram bağlı değil. Streamlit Secrets'a TELEGRAM_TOKEN ve TELEGRAM_CHAT_ID eklenince çalışır.")
+    msg = st.text_area("Mesaj", key="duyuru_msg")
+    if st.button("Gönder", key="duyuru_send") and msg.strip():
+        if notify(f"📣 {st.session_state.user_name}: {msg.strip()}"):
+            st.success("Gönderildi.")
+        else:
+            st.error("Gönderilemedi. Ayarları kontrol edin.")
+
 with top_bar:
     st.markdown("<style>div[data-testid='stPopover']{display:flex;justify-content:flex-end;}</style>", unsafe_allow_html=True)
     _sp, _pp = st.columns([2, 1])
@@ -1318,3 +1408,5 @@ with top_bar:
                 dlg_stok()
             if st.button("👥 Müşteri Geçmişi", key="open_gecmis", width="stretch"):
                 dlg_gecmis()
+            if tg_on() and st.button("📣 Duyuru Gönder", key="open_duyuru", width="stretch"):
+                dlg_duyuru()
