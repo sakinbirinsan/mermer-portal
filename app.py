@@ -9,6 +9,8 @@ import math
 import json
 import os
 import io
+import base64
+import requests
 import hmac
 import uuid
 from datetime import date
@@ -39,16 +41,110 @@ def safe_name(text, default="adsiz"):
     s_ = "".join(c for c in str(text) if c.isalnum() or c in (" ", "_", "-")).strip()
     return s_[:80] or default
 
-def read_json(path, default):
+# ---- Depolama katmanı: Supabase varsa veritabanı, yoksa yerel dosya ----
+def _sb_conf():
+    try:
+        return str(st.secrets["SUPABASE_URL"]).rstrip("/"), str(st.secrets["SUPABASE_KEY"])
+    except Exception:
+        return None
+
+SB = _sb_conf()
+USE_DB = SB is not None
+
+def _sb_call(method, params=None, body=None, extra=None):
+    url, key = SB
+    headers = {"apikey": key, "Content-Type": "application/json"}
+    if not key.startswith("sb_"):
+        headers["Authorization"] = f"Bearer {key}"
+    if extra:
+        headers.update(extra)
+    r = requests.request(method, f"{url}/rest/v1/kv", headers=headers, params=params, json=body, timeout=20)
+    r.raise_for_status()
+    return r.json() if r.text else None
+
+def _db_get_raw(key):
+    rows = _sb_call("GET", {"key": f"eq.{key}", "select": "value"})
+    return rows[0]["value"] if rows else None
+
+def _db_list_raw(prefix, with_values):
+    return _sb_call("GET", {"key": f"like.{prefix}*", "select": "key,value" if with_values else "key"})
+
+_db_get = st.cache_data(ttl=60, show_spinner=False)(_db_get_raw)
+_db_list = st.cache_data(ttl=60, show_spinner=False)(_db_list_raw)
+
+def read_json(path, default, fresh=False):
+    if USE_DB:
+        v = _db_get_raw(path) if fresh else _db_get(path)
+        return default if v is None else v
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
 
-def write_json(path, data):
+def write_json(path, data, clear=True):
+    if USE_DB:
+        clean = json.loads(json.dumps(data, ensure_ascii=False, default=str))
+        _sb_call("POST", {"on_conflict": "key"}, {"key": path, "value": clean},
+                 {"Prefer": "resolution=merge-duplicates,return=minimal"})
+        if clear:
+            st.cache_data.clear()
+        return
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=4)
+
+def delete_json(path, clear=True):
+    if USE_DB:
+        _sb_call("DELETE", {"key": f"eq.{path}"}, extra={"Prefer": "return=minimal"})
+        if clear:
+            st.cache_data.clear()
+    elif os.path.exists(path):
+        os.remove(path)
+
+def exists_json(path):
+    return (_db_get(path) is not None) if USE_DB else os.path.exists(path)
+
+def list_names(dir_):
+    if USE_DB:
+        pre = dir_ + "/"
+        return sorted(r["key"][len(pre):] for r in _db_list(pre, False))
+    return sorted(f for f in os.listdir(dir_) if f.endswith(".json"))
+
+def read_dir(dir_):
+    if USE_DB:
+        pre = dir_ + "/"
+        return {r["key"][len(pre):]: r["value"] for r in _db_list(pre, True)}
+    out = {}
+    for f in os.listdir(dir_):
+        if f.endswith(".json"):
+            d = read_json(os.path.join(dir_, f), None)
+            if d is not None:
+                out[f] = d
+    return out
+
+def save_photo(name, raw):
+    from PIL import Image
+    img = Image.open(io.BytesIO(raw)).convert("RGB")
+    img.thumbnail((1280, 1280))
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=80)
+    data = buf.getvalue()
+    if USE_DB:
+        write_json(f"{LOG_PHOTOS_DIR}/{name}", {"b64": base64.b64encode(data).decode()})
+    else:
+        with open(os.path.join(LOG_PHOTOS_DIR, name), "wb") as pf:
+            pf.write(data)
+
+def load_photo(name):
+    if USE_DB:
+        d = read_json(f"{LOG_PHOTOS_DIR}/{name}", None)
+        return base64.b64decode(d["b64"]) if d else None
+    path = os.path.join(LOG_PHOTOS_DIR, name)
+    if os.path.exists(path):
+        with open(path, "rb") as pf:
+            return pf.read()
+    return None
 
 def log_history(project, cart):
     """Kaydedilen sipariş kalemlerini müşteri geçmişine yazar (aynı proje tekrar kaydedilirse günceller)."""
@@ -83,6 +179,10 @@ if "user_name" not in st.session_state:
     st.session_state.user_name = "genel"
 st.sidebar.text_input("👤 Kullanıcı adınız", key="user_name", help="Her kullanıcının otomatik kurtarma sepeti ayrı tutulur.")
 RECOVERY_FILE = os.path.join(TEMPLATES_DIR, f"_recovery_{safe_name(st.session_state.user_name, 'genel')}.json")
+if USE_DB:
+    st.sidebar.caption("☁️ Veritabanı bağlı: veriler kalıcı olarak saklanıyor.")
+else:
+    st.sidebar.caption("⚠️ Geçici yerel depolama: uygulama yeniden başlayınca veriler silinebilir.")
 
 st.title("🗿 Emre Doğaltaş Üretim, Dizim, İhracat & Konteyner Portalı")
 st.caption("Fabrika Müdürü, Dizim Şefi, İhracat Sorumlusu ve Yönetim İçin Ortak Operasyon Paneli")
@@ -92,19 +192,11 @@ st.markdown("---")
 # REÇETE (PRESET) YÖNETİM FONKSİYONLARI
 # ------------------------------------------
 def load_all_presets():
-    """Sunucudaki tüm kayıtlı ürün reçetelerini yükler."""
+    """Kayıtlı tüm ürün reçetelerini yükler."""
     presets = {}
-    if os.path.exists(PRESETS_DIR):
-        for fname in os.listdir(PRESETS_DIR):
-            if fname.endswith(".json"):
-                fpath = os.path.join(PRESETS_DIR, fname)
-                try:
-                    with open(fpath, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                        preset_key = data.get("preset_name", fname.replace(".json", ""))
-                        presets[preset_key] = data
-                except Exception:
-                    pass
+    for fname, data in read_dir(PRESETS_DIR).items():
+        if isinstance(data, dict):
+            presets[data.get("preset_name", fname.replace(".json", ""))] = data
     return presets
 
 if "cart" not in st.session_state:
@@ -114,40 +206,34 @@ if "draft_data" not in st.session_state:
     st.session_state.draft_data = {}
 
 # Otomatik Kurtarma
-if os.path.exists(RECOVERY_FILE) and not st.session_state.cart:
-    try:
-        with open(RECOVERY_FILE, "r", encoding="utf-8") as rf:
-            rec_data = json.load(rf)
-            if rec_data.get("cart"):
-                st.warning("⚠️ **Son Oturum Kurtarıldı:** Son çalışmanız arka plandan getirildi.")
-                if st.button("🔄 Son Kurtarılan Verileri Sepete Yükle"):
-                    st.session_state.cart = rec_data.get("cart", [])
-                    st.rerun()
-    except Exception:
-        pass
+rec_data = read_json(RECOVERY_FILE, {}, fresh=True) if not st.session_state.cart else {}
+if rec_data.get("cart"):
+    st.warning("⚠️ **Son Oturum Kurtarıldı:** Son çalışmanız arka plandan getirildi.")
+    if st.button("🔄 Son Kurtarılan Verileri Sepete Yükle"):
+        st.session_state.cart = rec_data.get("cart", [])
+        st.rerun()
 
 def save_auto_recovery():
-    payload = {
-        "cart": st.session_state.cart,
-        "draft_data": st.session_state.draft_data
-    }
-    with open(RECOVERY_FILE, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=4)
+    payload = {"cart": st.session_state.cart, "draft_data": st.session_state.draft_data}
+    sig = json.dumps(payload, ensure_ascii=False, sort_keys=True, default=str)
+    if st.session_state.get("_rec_sig") == sig:
+        return
+    st.session_state["_rec_sig"] = sig
+    write_json(RECOVERY_FILE, payload, clear=False)
 
 # ------------------------------------------
 # YAN MENÜ (SIDEBAR): HIZLI TASLAK YÜKLEME & SİLME
 # ------------------------------------------
 st.sidebar.header("📁 Sunucudaki Kayıtlı Taslaklar")
 
-saved_files = [f for f in os.listdir(TEMPLATES_DIR) if f.endswith(".json") and not f.startswith("_")]
+saved_files = [f for f in list_names(TEMPLATES_DIR) if not f.startswith("_")]
 
 if saved_files:
     selected_template = st.sidebar.selectbox("Hızlı Taslak Seçin:", ["Seçiniz..."] + saved_files)
     
     if selected_template != "Seçiniz...":
         template_path = os.path.join(TEMPLATES_DIR, selected_template)
-        with open(template_path, "r", encoding="utf-8") as f:
-            t_data = json.load(f)
+        t_data = read_json(template_path, {})
             
         st.sidebar.success(f"📌 **Proje:** {t_data.get('proje_kodu', '')}")
         st.sidebar.info(f"🟢 **Durum:** {t_data.get('onay_durumu', '')}")
@@ -163,7 +249,7 @@ if saved_files:
                 st.rerun()
         with col_sb2:
             if st.button("🗑️", help="Bu taslağı sunucudan kalıcı olarak sil", width="stretch"):
-                os.remove(template_path)
+                delete_json(template_path)
                 st.toast(f"{selected_template} silindi!", icon="🗑️")
                 st.rerun()
 else:
@@ -172,8 +258,8 @@ else:
 st.sidebar.markdown("---")
 if st.sidebar.button("🗑️ Tüm Sepeti Temizle", width="stretch"):
     st.session_state.cart = []
-    if os.path.exists(RECOVERY_FILE):
-        os.remove(RECOVERY_FILE)
+    delete_json(RECOVERY_FILE, clear=False)
+    st.session_state.pop("_rec_sig", None)
     st.rerun()
 
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
@@ -213,8 +299,8 @@ with tab1:
                 preset_file_name = preset_data.get("file_name")
                 if preset_file_name:
                     file_to_del = os.path.join(PRESETS_DIR, os.path.basename(preset_file_name))
-                    if os.path.exists(file_to_del):
-                        os.remove(file_to_del)
+                    if exists_json(file_to_del):
+                        delete_json(file_to_del)
                         st.toast(f"'{selected_preset_name}' reçetesi silindi!", icon="🗑️")
                         st.rerun()
 
@@ -349,8 +435,7 @@ with tab1:
                 "crate_tare_kg": crate_tare_kg,
                 "target_pcs": target_pcs
             }
-            with open(os.path.join(PRESETS_DIR, clean_filename), "w", encoding="utf-8") as pf:
-                json.dump(save_preset_payload, pf, ensure_ascii=False, indent=4)
+            write_json(os.path.join(PRESETS_DIR, clean_filename), save_preset_payload)
             st.toast(f"'{new_preset_title}' reçetesi kaydedildi!", icon="✅")
             st.rerun()
 
@@ -737,8 +822,7 @@ with tab5:
                 }
                 save_path = os.path.join(TEMPLATES_DIR, f"{safe_name(order_no)}.json")
                 log_history(order_no, st.session_state.cart)
-                with open(save_path, "w", encoding="utf-8") as f:
-                    json.dump(payload, f, ensure_ascii=False, indent=4)
+                write_json(save_path, payload)
                 
                 st.success(f"✅ '{order_no}' isimli taslak sunucuya başarıyla kaydedildi! Sol yan menüden herkes erişebilir.")
                 st.rerun()
@@ -862,10 +946,8 @@ with tab8:
         if st.form_submit_button("➕ Kaydı Ekle", width="stretch"):
             photo_name = ""
             if l_photo is not None:
-                ext = os.path.splitext(l_photo.name)[1].lower()
-                photo_name = f"{l_date}_{uuid.uuid4().hex[:8]}{ext}"
-                with open(os.path.join(LOG_PHOTOS_DIR, photo_name), "wb") as pf:
-                    pf.write(l_photo.getbuffer())
+                photo_name = f"{l_date}_{uuid.uuid4().hex[:8]}.jpg"
+                save_photo(photo_name, l_photo.getvalue())
             log.append({"id": uuid.uuid4().hex[:8], "Tarih": str(l_date), "Yer": l_place, "Müşteri": l_cust, "Ürün": l_prod,
                         "Adet": int(l_qty), "Kasa": float(l_crate), "İşçi": int(l_workers), "Not": l_note,
                         "Foto": photo_name, "Kaydeden": st.session_state.user_name})
@@ -881,9 +963,10 @@ with tab8:
         d2.metric("Günlük Biten Kasa", f"{sum(e['Kasa'] for e in day_items):.1f}")
         st.dataframe(pd.DataFrame(day_items).drop(columns=["id", "Foto"]), width="stretch", hide_index=True)
         for e in day_items:
-            if e.get("Foto") and os.path.exists(os.path.join(LOG_PHOTOS_DIR, e["Foto"])):
+            img_bytes = load_photo(e["Foto"]) if e.get("Foto") else None
+            if img_bytes:
                 with st.expander(f"📷 {e['Yer']} - {e['Ürün']}"):
-                    st.image(os.path.join(LOG_PHOTOS_DIR, e["Foto"]))
+                    st.image(img_bytes)
         del_sel = st.selectbox("Silinecek kayıt:", [f"{e['id']} | {e['Yer']} - {e['Ürün']} ({e['Adet']})" for e in day_items])
         if st.button("🗑️ Seçili Kaydı Sil"):
             did = del_sel.split(" | ")[0]
