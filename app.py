@@ -399,7 +399,7 @@ with tab1:
         crate_length = st.number_input("Kasa Dış Boy (cm)", value=float(def_cl), step=1.0)
         crate_width = st.number_input("Kasa Dış En (cm)", value=float(def_cw), step=1.0)
         crate_height = st.number_input("Kasa Dış Yükseklik (cm)", value=float(def_ch), step=1.0)
-        crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=float(def_ctare), step=5.0)
+        crate_tare_kg = st.number_input("Boş Kasa Ağırlığı (kg)", value=float(def_ctare), step=5.0, key=f"ctare_{selected_preset_name}")
         is_stackable = st.checkbox("Üst Üste İstiflenebilir (Stackable)", value=True)
 
     # REÇETE KAYIT BÖLÜMÜ
@@ -407,11 +407,13 @@ with tab1:
     st.subheader("💾 Ekrandaki Parametreleri Yeni Reçete Olarak Kaydet")
     col_pr1, col_pr2 = st.columns([3, 1])
     with col_pr1:
-        new_preset_title = st.text_input("Reçete Adı (Örn: [F&D] Marble Thin Black Flute)", value=f"[{customer_name}] {product_name} ({p_length}x{p_width} cm)")
+        new_preset_title = st.text_input("Reçete Adı (Örn: [F&D] Marble Thin Black Flute)", value=(selected_preset_name if preset_data else f"[{customer_name}] {product_name} ({p_length}x{p_width} cm)"))
     with col_pr2:
         st.write("")
-        if st.button("💾 Reçeteyi Kütüphaneye Ekle", width="stretch"):
+        if st.button("♻️ Bu Reçeteyi Güncelle" if new_preset_title in all_presets else "💾 Reçeteyi Kütüphaneye Ekle", width="stretch"):
             clean_filename = "".join([c for c in new_preset_title if c.isalnum() or c in (' ', '_', '-')]).rstrip() + ".json"
+            _gv = lambda k, d: st.session_state.get(f"{k}_{selected_preset_name}", d)
+            _pd = preset_data or {}
             save_preset_payload = {
                 "preset_name": new_preset_title,
                 "file_name": clean_filename,
@@ -424,10 +426,13 @@ with tab1:
                 "p_width": p_width,
                 "p_thickness": p_thickness,
                 "density": density,
-                "pcs_per_box": preset_data.get("pcs_per_box", 24) if preset_data else 24,
-                "boxes_in_crate": preset_data.get("boxes_in_crate", 36) if preset_data else 36,
-                "thin_sinik_per_box": preset_data.get("thin_sinik_per_box", 1) if preset_data else 1,
-                "thick_sinik_per_box": preset_data.get("thick_sinik_per_box", 0) if preset_data else 0,
+                "pcs_per_box": _gv("pcs_per_box", _pd.get("pcs_per_box", 24)),
+                "boxes_in_crate": _gv("boxes_in_crate", _pd.get("boxes_in_crate", 36)),
+                "thin_sinik_per_box": _gv("thin_s", _pd.get("thin_sinik_per_box", 1)),
+                "thick_sinik_per_box": _gv("thick_s", _pd.get("thick_sinik_per_box", 0)),
+                "net_kg_per_pc": float(_gv("netpc", _pd.get("net_kg_per_pc", 0.0))),
+                "weight_src": (("katalog" if (_pd.get("weight_src") == "katalog" and abs(float(_gv("netpc", 0.0)) - float(_pd.get("net_kg_per_pc", 0.0))) < 1e-9) else "ölçülmüş") if float(_gv("netpc", _pd.get("net_kg_per_pc", 0.0))) > 0 else "tahmini"),
+                "box_type": _gv("boxtype", _pd.get("box_type", "Karton Kutu")),
                 "crate_length": crate_length,
                 "crate_width": crate_width,
                 "crate_height": crate_height,
@@ -453,8 +458,12 @@ with tab2:
         def_pcs_box = preset_data["pcs_per_box"] if preset_data else 24
         def_boxes_crate = preset_data["boxes_in_crate"] if preset_data else 36
 
-        pcs_per_box = st.number_input("1 Kutu İçi Taş / Parça Adedi", value=int(def_pcs_box), step=1)
-        boxes_in_crate = st.number_input("1 Kasadaki Kutu Sayısı", value=int(def_boxes_crate), step=1)
+        pcs_per_box = st.number_input("1 Kutu İçi Taş / Parça Adedi", value=int(def_pcs_box), step=1, key=f"pcs_per_box_{selected_preset_name}")
+        boxes_in_crate = st.number_input("1 Kasadaki Kutu Sayısı", value=int(def_boxes_crate), step=1, key=f"boxes_in_crate_{selected_preset_name}")
+        _stock_now = read_json(STOCK_FILE, [])
+        box_opts = list(dict.fromkeys(["Karton Kutu", "Strafor Kutu", "5'li Paket", "10'lu Paket"] + [r.get("Kalem") for r in _stock_now if r.get("Tür") == "Kutu" and r.get("Kalem")]))
+        _def_bt = (preset_data or {}).get("box_type", "Karton Kutu")
+        box_type = st.selectbox("Kutu / Paket Tipi", box_opts, index=box_opts.index(_def_bt) if _def_bt in box_opts else 0, key=f"boxtype_{selected_preset_name}")
         
         box_net_m2 = pcs_per_box * piece_m2
         if sales_unit == "Adet (Pcs)":
@@ -472,23 +481,39 @@ with tab2:
             needed_crates = math.ceil(target_m2 / crate_m2_capacity) if crate_m2_capacity > 0 else 1
             total_boxes = needed_crates * boxes_in_crate
 
-        stone_weight = (crate_pcs_capacity * piece_m2) * (p_thickness / 100) * (density * 1000)
+        calc_pc_kg = piece_m2 * (p_thickness / 100) * (density * 1000)
+        def_netpc = float((preset_data or {}).get("net_kg_per_pc", 0.0))
+        real_net_pc = st.number_input("Gerçek parça ağırlığı (kg/adet), 0 = formülle hesapla", value=def_netpc, step=0.01, format="%.3f", key=f"netpc_{selected_preset_name}")
+        net_pc_used = real_net_pc if real_net_pc > 0 else calc_pc_kg
+        _pd_src = (preset_data or {}).get("weight_src", "")
+        weight_src = ("katalog" if (_pd_src == "katalog" and abs(real_net_pc - def_netpc) < 1e-9) else "ölçülmüş") if real_net_pc > 0 else "tahmini"
+        stone_weight = crate_pcs_capacity * net_pc_used
         crate_gross_weight = stone_weight + crate_tare_kg
+        with st.expander("⚖️ Gerçek tartıdan ayarla"):
+            m_net = st.number_input("Tartılan 1 dolu kasa NET (kg)", value=0.0, step=5.0, key=f"mnet_{selected_preset_name}")
+            m_gross = st.number_input("Tartılan 1 dolu kasa BRÜT (kg)", value=0.0, step=5.0, key=f"mgross_{selected_preset_name}")
+            if m_net > 0 and crate_pcs_capacity > 0:
+                st.caption(f"→ parça başı net: {m_net / crate_pcs_capacity:.3f} kg" + (f" | kasa darası: {m_gross - m_net:.0f} kg" if m_gross > m_net else ""))
+                def _apply_weights(n=m_net, g=m_gross, cap=crate_pcs_capacity, k=selected_preset_name):
+                    st.session_state[f"netpc_{k}"] = round(n / cap, 4)
+                    if g > n:
+                        st.session_state[f"ctare_{k}"] = float(g - n)
+                st.button("Bu değerleri uygula", on_click=_apply_weights, key=f"apply_w_{selected_preset_name}")
         
         if sales_unit == "Adet (Pcs)":
             st.info(f"**1 Kasa Kapasitesi:** {crate_pcs_capacity} Adet ({crate_m2_capacity:.2f} m²)")
         else:
             st.info(f"**1 Kasa Kapasitesi:** {crate_m2_capacity:.2f} m²")
             
-        st.success(f"**1 Kasa Brüt Ağırlık:** {crate_gross_weight:.1f} kg")
+        st.success(f"**1 Kasa Net:** {stone_weight:.0f} kg  |  **Brüt:** {crate_gross_weight:.1f} kg  ({weight_src})")
 
     with col_d2:
         st.subheader("📐 Kutu İçi Kalıp & Şinik/Şilte")
         def_thick_s = preset_data["thick_sinik_per_box"] if preset_data else 0
         def_thin_s = preset_data["thin_sinik_per_box"] if preset_data else 1
 
-        thick_sinik_per_box = st.number_input("1 Kutu İçi Kalın Şinik Adedi", value=int(def_thick_s), step=1)
-        thin_sinik_per_box = st.number_input("1 Kutu İçi İnce Şinik Adedi", value=int(def_thin_s), step=1)
+        thick_sinik_per_box = st.number_input("1 Kutu İçi Kalın Şinik Adedi", value=int(def_thick_s), step=1, key=f"thick_s_{selected_preset_name}")
+        thin_sinik_per_box = st.number_input("1 Kutu İçi İnce Şinik Adedi", value=int(def_thin_s), step=1, key=f"thin_s_{selected_preset_name}")
         
         total_thick_sinik = total_boxes * thick_sinik_per_box
         total_thin_sinik = total_boxes * thin_sinik_per_box
@@ -551,6 +576,9 @@ with tab2:
                 "1 Kasa Kapasite (Adet)": crate_pcs_capacity,
                 "1 Kasa Kapasite (m²)": crate_m2_capacity,
                 "1 Kasa Ağırlık (kg)": crate_gross_weight,
+                "1 Kasa Net (kg)": round(stone_weight, 1),
+                "Ağırlık Kaynağı": weight_src,
+                "Kutu Tipi": box_type,
                 "Kalın Şinik / Kutu": thick_sinik_per_box,
                 "İnce Şinik / Kutu": thin_sinik_per_box,
                 "Kasa Sayısı": int(needed_crates),
@@ -619,12 +647,15 @@ with tab3:
             tot_m2 = crates * crate_m2_cap
             tot_boxes = crates * boxes_per_crate
             tot_wt = crates * crate_wt
+            _n = row.get("1 Kasa Net (kg)")
+            tot_net = round(crates * _n, 1) if _n is not None and pd.notna(_n) else None
 
             row_copy = dict(row)
             row_copy["Toplam Adet"] = tot_pcs
             row_copy["Toplam m²"] = round(tot_m2, 2)
             row_copy["Toplam Kutu"] = tot_boxes
             row_copy["Toplam Ağırlık (kg)"] = round(tot_wt, 1)
+            row_copy["Toplam Net Ağırlık (kg)"] = tot_net
             row_copy["Sipariş Miktarı"] = f"{tot_pcs:,} Adet" if row["Satış Birimi"] == "Adet (Pcs)" else f"{tot_m2:.2f} m²"
 
             updated_cart.append(row_copy)
@@ -643,7 +674,7 @@ with tab3:
         
         c_p1.metric("TOPLAM KASA", f"{tot_crates} Kasa")
         c_p2.metric("TOPLAM METRAJ & ADET", f"{tot_pcs:,.0f} Pcs", f"{tot_m2:.2f} m²")
-        c_p3.metric("TOPLAM BRÜT AĞIRLIK", f"{tot_kg:,.0f} kg", f"{tot_kg * 2.20462:,.0f} lbs")
+        c_p3.metric("TOPLAM BRÜT AĞIRLIK", f"{tot_kg:,.0f} kg", f"Net: {df_updated['Toplam Net Ağırlık (kg)'].sum():,.0f} kg | {tot_kg * 2.20462:,.0f} lbs")
         c_p4.metric("TOPLAM KUTU", f"{tot_boxes:,.0f} Kutu")
 
         st.markdown("---")
@@ -656,7 +687,7 @@ with tab3:
             
             with st.expander(f"📌 Müşteri: **{cust}** (Sipariş Detayı İçin Tıklayın)", expanded=True):
                 st.dataframe(
-                    cust_df[["PO / Sipariş No", "Ürün Adı", "Ebat (cm)", "Stok Durumu", "İmalat Süresi", "Kasa Sayısı", "Toplam Kutu", "Sipariş Miktarı", "Toplam m²", "Toplam Ağırlık (kg)"]],
+                    cust_df[["PO / Sipariş No", "Ürün Adı", "Ebat (cm)", "Stok Durumu", "İmalat Süresi", "Kasa Sayısı", "Toplam Kutu", "Sipariş Miktarı", "Toplam m²", "Toplam Net Ağırlık (kg)", "Toplam Ağırlık (kg)"]],
                     width="stretch",
                     hide_index=True
                 )
@@ -854,7 +885,10 @@ def panel_stok():
     if stock is None:
         stock = [
             {"Tür": "Kasa", "Kalem": "Ahşap Kasa 101x101x40", "Adet": 0, "Minimum": 10},
-            {"Tür": "Kutu", "Kalem": "Karton Kutu (standart)", "Adet": 0, "Minimum": 200},
+            {"Tür": "Kutu", "Kalem": "Karton Kutu", "Adet": 0, "Minimum": 200},
+            {"Tür": "Kutu", "Kalem": "Strafor Kutu", "Adet": 0, "Minimum": 100},
+            {"Tür": "Kutu", "Kalem": "5'li Paket", "Adet": 0, "Minimum": 100},
+            {"Tür": "Kutu", "Kalem": "10'lu Paket", "Adet": 0, "Minimum": 100},
             {"Tür": "Diğer", "Kalem": "Nem Alıcı Jel", "Adet": 0, "Minimum": 50},
         ]
     edited_stock = st.data_editor(
@@ -871,23 +905,45 @@ def panel_stok():
         st.warning(f"⚠️ **{r['Kalem']}** minimumun altında: {r['Adet']} / {r['Minimum']}")
 
     need_crates = sum(int(i.get("Kasa Sayısı", 0)) for i in st.session_state.cart)
-    need_boxes = sum(int(i.get("Kasa Sayısı", 0)) * int(i.get("Kasadaki Kutu", 0)) for i in st.session_state.cart)
+    need_by_type = {}
+    for i in st.session_state.cart:
+        t = i.get("Kutu Tipi") or ""
+        need_by_type[t] = need_by_type.get(t, 0) + int(i.get("Kasa Sayısı", 0)) * int(i.get("Kasadaki Kutu", 0))
+    kutu_rows = edited_stock[edited_stock["Tür"] == "Kutu"]
+
+    def _match(t):
+        m = kutu_rows[kutu_rows["Kalem"] == t]
+        if len(m):
+            return m.index[0]
+        return kutu_rows.index[0] if (not t and len(kutu_rows)) else None
+
     have_crates = edited_stock[edited_stock["Tür"] == "Kasa"]["Adet"].sum()
-    have_boxes = edited_stock[edited_stock["Tür"] == "Kutu"]["Adet"].sum()
-
     st.subheader("🛒 Sepetteki Siparişin Ambalaj İhtiyacı")
-    n1, n2 = st.columns(2)
-    n1.metric("Gereken Kasa", f"{need_crates:,}", f"Stok farkı: {have_crates - need_crates:,.0f}")
-    n2.metric("Gereken Kutu", f"{need_boxes:,}", f"Stok farkı: {have_boxes - need_boxes:,.0f}")
-    if (have_crates < need_crates or have_boxes < need_boxes) and st.session_state.cart:
-        st.error("Stok bu sipariş için yetersiz, tedarik gerekli.")
+    st.metric("Gereken Kasa", f"{need_crates:,}", f"Stok farkı: {have_crates - need_crates:,.0f}")
+    lack = need_crates > have_crates
+    if need_by_type:
+        need_rows = []
+        for t, need in need_by_type.items():
+            idx = _match(t)
+            have = float(edited_stock.loc[idx, "Adet"]) if idx is not None else None
+            need_rows.append({"Kutu / Paket Tipi": t or "(belirtilmemiş)", "Gereken": f"{need:,}",
+                              "Stokta": f"{have:,.0f}" if have is not None else "stokta kalem yok",
+                              "Fark": f"{have - need:,.0f}" if have is not None else "-"})
+            if have is None or have < need:
+                lack = True
+        st.dataframe(pd.DataFrame(need_rows), width="stretch", hide_index=True)
+    if lack and st.session_state.cart:
+        st.error("Stok bu sipariş için yetersiz ya da bir kutu tipi stok listesinde yok.")
 
-    if st.session_state.cart and st.button("📉 Sepetteki Siparişi Stoktan Düş (her türün ilk kalemi)"):
+    if st.session_state.cart and st.button("📉 Sepetteki Siparişi Stoktan Düş"):
         cur = edited_stock.copy()
-        for tur, need in (("Kasa", need_crates), ("Kutu", need_boxes)):
-            idx = cur.index[cur["Tür"] == tur]
-            if len(idx):
-                cur.loc[idx[0], "Adet"] -= need
+        kidx = cur.index[cur["Tür"] == "Kasa"]
+        if len(kidx):
+            cur.loc[kidx[0], "Adet"] -= need_crates
+        for t, need in need_by_type.items():
+            idx = _match(t)
+            if idx is not None:
+                cur.loc[idx, "Adet"] -= need
         write_json(STOCK_FILE, cur.to_dict("records"))
         st.rerun(scope="fragment")
 
@@ -989,6 +1045,10 @@ SEED_ROWS = [
     (FD, "MAR BLACK THIN FLUT", "SIYAH MINI BULLNOSE FLUT", "15x61 cm", 61, 15, 1.0, "F", 68, 4, ""),
     (FD, "MAR LUNA CREMA THIN FLUTE", "BOTTOCINO MINI BULLNOSE FLUT", "15x61 cm", 61, 15, 1.0, "F", 68, 4, ""),
     (FD, "MAR BOTTOCINO PENCIL", "HONLU PENCIL", "30.5x1.9x1.2 cm", 30.5, 1.9, 1.2, "F", 100, 20, ""),
+    (FD, "MAR CREMA ROYAL PENCIL", "POLISHED PENCIL", "30.5x1.9x1.2 cm", 30.5, 1.9, 1.2, "F", 100, 20, ""),
+    (FD, "MAR VAN ICE PENCIL", "HONLU PENCIL", "30.5x1.9x1.2 cm", 30.5, 1.9, 1.2, "F", 100, 20, ""),
+    (FD, "MAR FLUTED BLACK", "6X24 FLUTED", "15x61 cm", 61, 15, 1.0, "F", 52, 4, ""),
+    (FD, "LIM LINEN LIMESTONE", "6X24 DIM", "15x61 cm", 61, 15, 1.0, "E", 60, 5, ""),
     ("Mozaikçi", "COASTAL LIMESTONE", "HONLU FAYANS", "30.5x61x1.2 cm", 61, 30.5, 1.2, "E", 40, 4, ""),
     ("Mozaikçi", "COASTAL LIMESTONE", "HONLU FAYANS", "15.2x30.5x1 cm", 30.5, 15.2, 1.0, "E", 36, 20, ""),
     ("Mozaikçi", "COASTAL LIMESTONE", "HONLU FAYANS", "7.5x22.5x1 cm", 22.5, 7.5, 1.0, "E", 42, 60, ""),
@@ -1038,6 +1098,76 @@ SEED_IVA = [
 for _m, _t, _lab, _l, _w, _th, _tot in SEED_IVA:
     SEED_ROWS.append(("İVA", _m, _t, _lab, _l, _w, _th, "F", _tot // 5, 5, "kutu?"))
 
+# Gerçek tartılar (iso.xlsx): (1 kasa NET kg, 1 kasa BRÜT kg), anahtar (model, taş cinsi) ya da (model, taş cinsi, ebat)
+SEED_WEIGHTS = {
+    ("MAR VAN ICE THIN FLUT", "BEIGE MINI BULLNOSE FLUT"): (702.4, 741.0),
+    ("MAR CALA VERDE BAMBOO", "CALACATA ERMER BAMBOO FLUT"): (718.6, 758.6),
+    ("MAR CREMA ROYAL PETRA", "DIANA ROYAL KIRMA FLUT"): (750.8, 789.2),
+    ("MAR CAR CHATEAU PETRA", "MUGLA KIRMA"): (743.8, 782.4),
+    ("MAR FELIX DOLOMITE GREEN HON", "YILDIZLI MODEL DOLOMITE + YESIL"): (890, 930),
+    ("LIM LINEN IVY HON MOS", "LEAF LIMRA"): (640, 680),
+    ("MAR BLACK THIN FLUT", "SIYAH MINI BULLNOSE FLUT"): (715, 750),
+    ("MAR LUNA CREMA THIN FLUTE", "BOTTOCINO MINI BULLNOSE FLUT"): (720.5, 755.5),
+    ("MAR BOTTOCINO PENCIL", "HONLU PENCIL"): (370, 400),
+    ("MAR CREMA ROYAL PENCIL", "POLISHED PENCIL"): (370, 400),
+    ("MAR VAN ICE PENCIL", "HONLU PENCIL"): (370, 400),
+    ("MAR FLUTED BLACK", "6X24 FLUTED"): (810, 850),
+    ("LIM LINEN LIMESTONE", "6X24 DIM"): (790, 830),
+    ("TEOS GREEN MRB.", "HONLU FAYANS"): (880, 920),
+    ("ROSSO LEVANTO", "HONLU FAYANS"): (880, 920),
+    ("CARRARA MRB", "CILALI FAYANS"): (880, 920),
+    ("TAURUS NERO (TOROS SIYAH) MRB.", "ESKITME"): (740, 770),
+    ("CARRARA + ASH BLUE MRB", "HONLU SCALLOP SHELL"): (710, 750),
+    ("CARRARA WHITE MRB.", "HONLU SCALLOP SHELL"): (710, 750),
+    ("CARRARA WHITE MRB.", "HONLU HEXAGON"): (690, 730),
+    ("CARRARA MRB.", "HONLU PAHLI"): (790, 830),
+    ("CARRARA MRB.", "HONLU", "tear drop (lemon)"): (690, 730),
+    ("CARRARA MRB", "HONED BRICK"): (840, 880),
+}
+
+
+# F&D "New Products" listesi: (VSN, açıklama, taş, tür, boy cm, en cm, kalınlık cm, parça ağırlığı lb, kutu içi adet, palet/kasa adedi)
+SEED_FD_CATALOG = [
+    ('M0519', 'Vanilla Marble with white dolomite', 'Marble', 'Mosaic', 28.1, 27.2, 0.95, 3.8755854701123207, 5, 360),
+    ('M0519', 'Dolomite with Teos Green', 'Dolomite', 'Mosaic', 28.1, 27.2, 0.95, 3.8755854701123207, 5, 360),
+    ('M0515', 'Dolomite with Teos Green', 'Dolomite', 'Mosaic', 30.0, 25.8, 0.95, 3.9246691881239997, 5, 360),
+    ('M0515', 'Calacatta Verde with Dolomite', 'Marble', 'Mosaic', 30.0, 25.8, 0.95, 3.9246691881239997, 5, 360),
+    ('M0512', 'Dolomit with Iceber + Kombassan M (Grey) + Vanilla', 'Dolomite', 'Mosaic', 30.5, 30.5, 0.95, 4.716955442186499, 5, 360),
+    ('M0513', 'Dolomit with Diana Royal', 'Dolomite', 'Mosaic', 29.0, 29.0, 0.95, 4.264401533866, 5, 360),
+    ('M0513', 'Dolomit with Teos Green', 'Dolomite', 'Mosaic', 29.0, 29.0, 0.95, 4.264401533866, 5, 360),
+    ('M0513', 'Dolomit with Kombassan M (Grey)', 'Dolomite', 'Mosaic', 29.0, 29.0, 0.95, 4.264401533866, 5, 360),
+    ('M0525', 'Dolomit with Kombassan M (Grey)', 'Dolomite', 'Mosaic', 26.7, 23.1, 0.95, 3.1274137146760204, 5, 360),
+    ('M0526', 'Dolomit with Vanilla', 'Dolomite', 'Mosaic', 30.5, 30.5, 0.95, 4.716955442186499, 5, 360),
+    ('M0526', 'Dolomit with Teos Green', 'Dolomite', 'Mosaic', 30.5, 30.5, 0.95, 4.716955442186499, 5, 360),
+    ('M0502', 'Dolomit with Vanilla Dark', 'Dolomite', 'Mosaic', 30.5, 30.5, 0.95, 4.716955442186499, 5, 360),
+    ('M0509', 'Dolomit with Equator', 'Dolomite', 'Mosaic', 31.5, 30.0, 0.95, 4.7917472645700006, 5, 360),
+    ('M0507', 'DN Limra Vein Cut', 'Limestone', 'Mosaic', 31.5, 26.5, 0.95, 4.2327100837035, 5, 360),
+    ('M0504', 'Dolomit with Vanilla Dark', 'Dolomite', 'Mosaic', 30.5, 30.5, 0.95, 4.716955442186499, 5, 360),
+    ('M0527', 'DN Limra Vein Cut', 'Limestone', 'Mosaic', 40.6, 40.6, 0.95, 7.4975, 4, 288),
+    ('EMR 10', 'DN Limra Vein Cut', 'Limestone', 'Tile', 61.0, 15.2, 1.91, 7.6654728497399995, 4, 208),
+    ('G0409', 'Calacatta Verde', 'Marble', 'Tile', 30.5, 10.0, 3.0, 3.3620494954999995, 6, 384),
+    ('G0407', 'Kombassan', 'Marble', 'Tile', 20.0, 20.0, 3.0, 3.9683207160000005, 6, 384),
+    ('-', 'DN Limra Vein Cut', 'Limestone', 'Tile', 40.6, 10.0, 0.95, 1.9993333333333332, 15, 630),
+    ('G0408', 'Calacatta Verde', 'Marble', 'Tile', 30.5, 20.0, 3.0, 3.7037660015999996, 4, 160),
+]
+
+def _catalog_presets():
+    out = {}
+    for vsn, desc, body, kind, L, W, T, lb, bq, pal in SEED_FD_CATALOG:
+        lab = f"{L:g}x{W:g} cm"
+        name = f"[{FD}] {vsn} {desc} ({lab}) [katalog]"
+        fn = "".join(ch for ch in name if ch.isalnum() or ch in (" ", "_", "-")).rstrip() + ".json"
+        out[fn] = {
+            "preset_name": name, "file_name": fn, "customer_name": FD, "po_number": "",
+            "product_name": f"{vsn} {desc}", "product_type": "Mozaik" if kind == "Mosaic" else "Ebatlı Mermer / Plaka",
+            "sales_unit": "Adet (Pcs)", "p_length": L, "p_width": W, "p_thickness": T,
+            "density": 2.6 if body == "Limestone" else 2.7,
+            "pcs_per_box": bq, "boxes_in_crate": pal // bq, "thin_sinik_per_box": 0, "thick_sinik_per_box": 0,
+            "crate_length": 101.0, "crate_width": 101.0, "crate_height": 40.0, "crate_tare_kg": 40.0,
+            "target_pcs": pal, "net_kg_per_pc": round(lb * 0.45359237, 4), "weight_src": "katalog", "box_type": "Karton Kutu",
+        }
+    return out
+
 def build_seed_presets():
     types = {"F": "Flute / Moulding", "M": "Mozaik", "E": "Ebatlı Mermer / Plaka"}
     out = {}
@@ -1055,6 +1185,13 @@ def build_seed_presets():
             "crate_length": 101.0, "crate_width": 101.0, "crate_height": 40.0, "crate_tare_kg": 35.0,
             "target_pcs": nb * pp,
         }
+        out[fn].update({"net_kg_per_pc": 0.0, "weight_src": "tahmini", "box_type": "Karton Kutu"})
+        w = SEED_WEIGHTS.get((m, t, lab)) or SEED_WEIGHTS.get((m, t))
+        if w:
+            out[fn]["net_kg_per_pc"] = round(w[0] / (nb * pp), 4)
+            out[fn]["crate_tare_kg"] = float(round(w[1] - w[0], 1))
+            out[fn]["weight_src"] = "ölçülmüş"
+    out.update(_catalog_presets())
     return out
 
 def write_many(items):
@@ -1068,15 +1205,24 @@ def write_many(items):
             write_json(k, v)
 
 with st.sidebar.expander("📥 Başlangıç Reçeteleri"):
-    st.caption("Floor & Decor, İVA, Mozaikçi ve İonic siparişlerinden hazırlanan 1 kasalık reçeteler. Zaten kayıtlı olanların üzerine yazılmaz.")
+    st.caption("Floor & Decor, İVA, Mozaikçi ve İonic siparişlerinden hazırlanan 1 kasalık reçeteler. Kayıtlı reçetelerin sadece ağırlık bilgisi gerçek tartılarla güncellenir, diğer ayarların korunur.")
     if st.session_state.get("seed_msg"):
         st.success(st.session_state.pop("seed_msg"))
     if st.button("Hazır reçeteleri yükle", key="seed_btn"):
-        have = set(read_dir(PRESETS_DIR).keys())
-        new_items = {os.path.join(PRESETS_DIR, fn): d for fn, d in build_seed_presets().items() if fn not in have}
+        have = read_dir(PRESETS_DIR)
+        seeds = build_seed_presets()
+        new_items, upd = {}, 0
+        for fn, d in seeds.items():
+            if fn not in have:
+                new_items[os.path.join(PRESETS_DIR, fn)] = d
+            elif d["weight_src"] == "ölçülmüş" and have[fn].get("weight_src") != "ölçülmüş":
+                merged = dict(have[fn])
+                merged.update({k: d[k] for k in ("net_kg_per_pc", "crate_tare_kg", "weight_src")})
+                new_items[os.path.join(PRESETS_DIR, fn)] = merged
+                upd += 1
         if new_items:
             write_many(new_items)
-        st.session_state["seed_msg"] = f"{len(new_items)} yeni reçete eklendi."
+        st.session_state["seed_msg"] = f"{len(new_items) - upd} yeni reçete eklendi, {upd} reçetenin ağırlığı gerçek tartıya göre güncellendi."
         st.rerun()
 
 
