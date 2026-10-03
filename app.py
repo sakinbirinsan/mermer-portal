@@ -972,3 +972,109 @@ with tab8:
             did = del_sel.split(" | ")[0]
             write_json(LOG_FILE, [e for e in log if e["id"] != did])
             st.rerun()
+
+
+# ------------------------------------------
+# BAŞLANGIÇ REÇETELERİ (Excel tablolarından hazırlandı, hepsi 1 kasa)
+# ------------------------------------------
+# (müşteri, model, taş cinsi, ebat etiketi, boy, en, kalınlık, tip F/M/E, kasadaki kutu, kutu içi adet, not)
+FD = "Floor & Decor (FD)"
+SEED_ROWS = [
+    (FD, "MAR VAN ICE THIN FLUT", "BEIGE MINI BULLNOSE FLUT", "15x61 cm", 61, 15, 1.0, "F", 60, 5, ""),
+    (FD, "MAR CALA VERDE BAMBOO", "CALACATA ERMER BAMBOO FLUT", "15x61 cm", 61, 15, 1.0, "F", 60, 5, ""),
+    (FD, "MAR CREMA ROYAL PETRA", "DIANA ROYAL KIRMA FLUT", "15x61 cm", 61, 15, 1.0, "F", 52, 5, ""),
+    (FD, "MAR CAR CHATEAU PETRA", "MUGLA KIRMA", "15x61 cm", 61, 15, 1.0, "F", 52, 5, ""),
+    (FD, "MAR FELIX DOLOMITE GREEN HON", "YILDIZLI MODEL DOLOMITE + YESIL", "30.5x30.5 cm", 30.5, 30.5, 1.0, "M", 72, 5, "ebat?"),
+    (FD, "LIM LINEN IVY HON MOS", "LEAF LIMRA", "30.5x30.5 cm", 30.5, 30.5, 1.0, "M", 72, 5, "ebat?"),
+    (FD, "MAR BLACK THIN FLUT", "SIYAH MINI BULLNOSE FLUT", "15x61 cm", 61, 15, 1.0, "F", 68, 4, ""),
+    (FD, "MAR LUNA CREMA THIN FLUTE", "BOTTOCINO MINI BULLNOSE FLUT", "15x61 cm", 61, 15, 1.0, "F", 68, 4, ""),
+    (FD, "MAR BOTTOCINO PENCIL", "HONLU PENCIL", "30.5x1.9x1.2 cm", 30.5, 1.9, 1.2, "F", 100, 20, ""),
+    ("Mozaikçi", "COASTAL LIMESTONE", "HONLU FAYANS", "30.5x61x1.2 cm", 61, 30.5, 1.2, "E", 40, 4, ""),
+    ("Mozaikçi", "COASTAL LIMESTONE", "HONLU FAYANS", "15.2x30.5x1 cm", 30.5, 15.2, 1.0, "E", 36, 20, ""),
+    ("Mozaikçi", "COASTAL LIMESTONE", "HONLU FAYANS", "7.5x22.5x1 cm", 22.5, 7.5, 1.0, "E", 42, 60, ""),
+    ("Mozaikçi", "MONTAUK MRB.", "HONLU FAYANS", "7.5x22.5x1 cm", 22.5, 7.5, 1.0, "E", 42, 60, ""),
+    ("Mozaikçi", "KOMBASAN WHITE", "HONLU FAYANS", "7.5x15x1 cm", 15, 7.5, 1.0, "E", 42, 88, ""),
+    ("Mozaikçi", "KEMALPAŞA WHITE", "FAYANS HONLU", "30.5x61x1.2 cm", 61, 30.5, 1.2, "E", 40, 4, ""),
+    ("Mozaikçi", "KEMALPAŞA WHITE", "HEXAGON HONLU", "5.5 cm hexagon", 30.5, 30.5, 1.0, "M", 45, 10, ""),
+    ("Mozaikçi", "KOMBASAN WHITE", "HEXAGON HONED", "5.5 cm hexagon", 30.5, 30.5, 1.0, "M", 45, 10, ""),
+    ("Mozaikçi", "KOMBASAN WHITE + DOT AFYON GRI", "SMALL IDA HONLU", "2.3x4.8x1 cm", 30.5, 30.5, 1.0, "M", 45, 10, ""),
+    ("Mozaikçi", "KEMALPAŞA + DOT KUTAHYA SIYAH (KINGBLUE)", "BIG IDA CILALI", "8.6x6.2x1 cm", 30.5, 30.5, 1.0, "M", 45, 10, ""),
+    ("İonic", "CARRARA + ASH BLUE MRB", "HONLU SCALLOP SHELL", "balik pulu", 30.5, 30.5, 1.0, "M", 36, 10, ""),
+    ("İonic", "CARRARA WHITE MRB.", "HONLU SCALLOP SHELL", "balik pulu", 30.5, 30.5, 1.0, "M", 36, 10, ""),
+    ("İonic", "CARRARA MRB.", "HONLU PAHLI", "metro 4.8x10x1 cm", 30.5, 30.5, 1.0, "M", 36, 10, ""),
+    ("İonic", "CARRARA MRB.", "HONLU", "tear drop (lemon)", 30.5, 30.5, 1.0, "M", 36, 10, ""),
+    ("İonic", "CARRARA WHITE MRB", "HONLU SKIRTING BASEBOARD", "12.5x61x2 cm", 61, 12.5, 2.0, "E", 50, 5, "kutu?"),
+    ("İonic", "CARRARA MRB.", "HONLU", "arabesque", 30.5, 30.5, 1.0, "M", 36, 10, ""),
+    ("İonic", "CARRARA MRB", "HONED BRICK", "2.3x7.5x1 cm", 30.5, 30.5, 1.0, "M", 36, 10, ""),
+    ("İonic", "CARRARA WHITE MRB.", "HONLU HEXAGON", "2 inch hexagon", 30.5, 30.5, 1.0, "M", 36, 10, ""),
+    ("İonic", "CARRARA MRB", "CILALI FAYANS", "10x30.5x1 cm", 30.5, 10, 1.0, "E", 36, 30, ""),
+    ("İonic", "TEOS GREEN MRB.", "HONLU FAYANS", "30.5x30.5x1 cm", 30.5, 30.5, 1.0, "E", 36, 10, ""),
+    ("İonic", "ROSSO LEVANTO", "HONLU FAYANS", "30.5x30.5x1 cm", 30.5, 30.5, 1.0, "E", 36, 10, ""),
+    ("İonic", "TAURUS NERO (TOROS SIYAH) MRB.", "ESKITME", "2.3x2.3x1 cm", 30.5, 30.5, 1.0, "M", 36, 10, ""),
+    ("İonic", "CREMA MARFIL MARBLE", "SPLIT FACE PATLATMA", "4.8x10 cm", 30.5, 30.5, 1.0, "M", 45, 5, ""),
+]
+
+# İVA: tabloda sadece kasa başına toplam adet var (kutu dağılımı yok, kutu içi 5 varsayıldı)
+# (model, taş cinsi, ebat etiketi, boy, en, kalınlık, kasa başına toplam adet)
+SEED_IVA = [
+    ("BOTTOCINO MRB.", "HONLU CHAIRRAIL F5", "5x15x2.8 cm", 15, 5, 2.8, 300),
+    ("BOTTOCINO MRB.", "CILALI CHAIRRAIL F5", "5x15x2.8 cm", 15, 5, 2.8, 300),
+    ("BOTTOCINO MRB.", "HONLU BULLNOSE", "1.9x15x1.9 cm", 15, 1.9, 1.9, 300),
+    ("BOTTOCINO MRB.", "CILALI BULLNOSE", "1.9x15x1.9 cm", 15, 1.9, 1.9, 300),
+    ("SILVER TRAVERTINE", "OGEE1 HONED", "4.8x15x2.5 cm", 15, 4.8, 2.5, 200),
+    ("SILVER TRAVERTINE", "HONED BULLNOSE", "1.9x15x1.9 cm", 15, 1.9, 1.9, 200),
+    ("SILVER TRAVERTINE", "HONLU PENCIL", "1.2x15x1.5 cm", 15, 1.2, 1.5, 300),
+    ("LIGHT TRAVERTINE", "HONLU OGEE1 F1", "4.8x15x2.5 cm", 15, 4.8, 2.5, 200),
+    ("LIGHT TRAVERTINE", "BULLNOSE HONLU", "1.9x15x1.9 cm", 15, 1.9, 1.9, 200),
+    ("IVORY TRAVERTINE", "HONED PENCIL", "1.2x15x1.5 cm", 15, 1.2, 1.5, 300),
+    ("NOCE TRAVERTINE", "HONLU OGEE1", "4.8x15x2.5 cm", 15, 4.8, 2.5, 200),
+    ("NOCE TRAVERTINE", "BULLNOSE HONED", "1.9x15x1.9 cm", 15, 1.9, 1.9, 200),
+    ("NOCE TRAVERTINE", "HONLU PENCIL", "1.2x15x1.5 cm", 15, 1.2, 1.5, 300),
+    ("WALLNUT TRV", "HONED OGEE1 F1", "4.8x15x2.5 cm", 15, 4.8, 2.5, 200),
+    ("WALLNUT TRV", "HONLU BULLNOSE", "1.9x15x1.9 cm", 15, 1.9, 1.9, 200),
+    ("WALLNUT TRV", "HONED PENCIL", "1.2x15x1.5 cm", 15, 1.2, 1.5, 300),
+    ("LYMRA LIMESTONE", "HONLU MINIMAL MODERN CHAIRRAIL", "5x15x2 cm", 15, 5, 2.0, 300),
+]
+for _m, _t, _lab, _l, _w, _th, _tot in SEED_IVA:
+    SEED_ROWS.append(("İVA", _m, _t, _lab, _l, _w, _th, "F", _tot // 5, 5, "kutu?"))
+
+def build_seed_presets():
+    types = {"F": "Flute / Moulding", "M": "Mozaik", "E": "Ebatlı Mermer / Plaka"}
+    out = {}
+    for c, m, t, lab, L, W, T, ty, nb, pp, note in SEED_ROWS:
+        name = f"[{c}] {m} - {t} ({lab})" + (f" [{note}]" if note else "")
+        fn = "".join(ch for ch in name if ch.isalnum() or ch in (" ", "_", "-")).rstrip() + ".json"
+        up = m.upper()
+        dens = 2.5 if ("TRAV" in up or "TRV" in up) else 2.6 if "LIMESTONE" in up else 2.7
+        out[fn] = {
+            "preset_name": name, "file_name": fn, "customer_name": c, "po_number": "",
+            "product_name": f"{m} {t}", "product_type": types[ty], "sales_unit": "Adet (Pcs)",
+            "p_length": L, "p_width": W, "p_thickness": T, "density": dens,
+            "pcs_per_box": pp, "boxes_in_crate": nb,
+            "thin_sinik_per_box": 1 if ty == "F" else 0, "thick_sinik_per_box": 0,
+            "crate_length": 101.0, "crate_width": 101.0, "crate_height": 40.0, "crate_tare_kg": 35.0,
+            "target_pcs": nb * pp,
+        }
+    return out
+
+def write_many(items):
+    """Birden fazla kaydı tek seferde yazar."""
+    if USE_DB:
+        rows = [{"key": k, "value": json.loads(json.dumps(v, ensure_ascii=False, default=str))} for k, v in items.items()]
+        _sb_call("POST", {"on_conflict": "key"}, rows, {"Prefer": "resolution=merge-duplicates,return=minimal"})
+        st.cache_data.clear()
+    else:
+        for k, v in items.items():
+            write_json(k, v)
+
+with st.sidebar.expander("📥 Başlangıç Reçeteleri"):
+    st.caption("Floor & Decor, İVA, Mozaikçi ve İonic siparişlerinden hazırlanan 1 kasalık reçeteler. Zaten kayıtlı olanların üzerine yazılmaz.")
+    if st.session_state.get("seed_msg"):
+        st.success(st.session_state.pop("seed_msg"))
+    if st.button("Hazır reçeteleri yükle", key="seed_btn"):
+        have = set(read_dir(PRESETS_DIR).keys())
+        new_items = {os.path.join(PRESETS_DIR, fn): d for fn, d in build_seed_presets().items() if fn not in have}
+        if new_items:
+            write_many(new_items)
+        st.session_state["seed_msg"] = f"{len(new_items)} yeni reçete eklendi."
+        st.rerun()
