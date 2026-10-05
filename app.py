@@ -195,87 +195,6 @@ def upsert_order(project, cart):
     write_json(path, {"project": project, "created": old.get("created", str(date.today())), "lines": lines,
                       "by": st.session_state.user_name, "at": str(date.today())})
 
-# --- Toplu giriş: günün tüm satırlarını tek tabloda gir ---
-# (kolon, tip): tip = txt / int / flt / sel_place / sel_cust
-DIZIM_SPEC = [("Yer", "sel_place"), ("Müşteri", "sel_cust"), ("Ürün", "txt"), ("Adet", "int"),
-              ("Kasa", "flt"), ("İşçi", "int"), ("Not", "txt")]
-KESIM_SPEC = [("Yer", "sel_place"), ("Usta", "txt"), ("Müşteri", "sel_cust"), ("Malzeme", "txt"), ("Ürün", "txt"),
-              ("Adet", "int"), ("m²", "flt"), ("Fire", "int"), ("Plaka", "int"), ("Not", "txt")]
-
-def _zero_cols(spec, keep):
-    return [c for c, t in spec if t in ("int", "flt") and c not in keep]
-
-def _batch_copy(entries, spec, keep):
-    """Son günün satırlarını kopyalar; adetler sıfırlanır, not temizlenir."""
-    days = sorted({e.get("Tarih", "") for e in entries}, reverse=True)
-    if not days:
-        return []
-    zc = _zero_cols(spec, keep)
-    last = sorted([e for e in entries if e.get("Tarih") == days[0]], key=lambda e: e.get("Saat", ""))
-    return [{c: (0 if c in zc else ("" if c == "Not" else e.get(c, 0 if t in ("int", "flt") else "")))
-             for c, t in spec} for e in last]
-
-def _batch_entries(rows, spec, keep, tarih, user):
-    """Tablo satırlarını kayıtlara çevirir; adet/kasa gibi alanların hepsi 0 olan satırlar atlanır."""
-    zc = _zero_cols(spec, keep)
-    out = []
-    for r in rows:
-        vals = {}
-        for c, t in spec:
-            v = r.get(c)
-            if v is None or (isinstance(v, float) and v != v):
-                v = 0 if t in ("int", "flt") else ""
-            vals[c] = int(float(v)) if t == "int" else float(v) if t == "flt" else str(v).strip()
-        if not any(vals[c] for c in zc):
-            continue
-        out.append({"id": uuid.uuid4().hex[:8], "Tarih": tarih, **vals, "Foto": "", "Kaydeden": user, "Saat": now_hm()})
-    return out
-
-def batch_entry(prefix, new_dir, entries, spec, keep=()):
-    msg_key, df_key, ed_key = f"{prefix}_bmsg", f"{prefix}_bdf", f"{prefix}_beditor"
-    names = [c for c, _ in spec]
-    with st.expander("⚡ Toplu Giriş: günün kayıtlarını tek tabloda gir"):
-        st.caption("Dünkü satırları kopyalayıp sadece rakamları değiştirin. Adet/kasa gibi rakamların hepsi 0 olan satırlar kaydedilmez. "
-                   "Listede olmayan yeni müşteri/yer için aşağıdaki tek kayıt formunu kullanın, sonraki sefer listede çıkar.")
-        if st.session_state.get(msg_key):
-            st.success(st.session_state.pop(msg_key))
-        b_date = st.date_input("Tarih", value=date.today(), key=f"{prefix}_bdate")
-        if st.button("📋 Son günün satırlarını kopyala", key=f"{prefix}_bcopy"):
-            rows = _batch_copy(entries, spec, keep)
-            if rows:
-                st.session_state[df_key] = pd.DataFrame(rows, columns=names)
-                st.session_state.pop(ed_key, None)
-                st.rerun(scope="fragment")
-            st.warning("Kopyalanacak kayıt yok.")
-        base = st.session_state.get(df_key)
-        if base is None:
-            base = pd.DataFrame({c: pd.Series(dtype="float64" if t in ("int", "flt") else "object") for c, t in spec})
-        customers = sorted({str(e.get("Müşteri", "")).strip() for e in entries} |
-                           {str(x.get("customer_name", "")).strip() for x in load_all_presets().values()} - {""})
-        places = sorted({"Dizim", "Tezgah", "Şinik"} | ({str(e.get("Yer", "")).strip() for e in entries} - {""}))
-        cfg = {}
-        for c, t in spec:
-            if t == "sel_place":
-                cfg[c] = st.column_config.SelectboxColumn(c, options=places)
-            elif t == "sel_cust":
-                cfg[c] = st.column_config.SelectboxColumn(c, options=[x for x in customers if x])
-            elif t == "int":
-                cfg[c] = st.column_config.NumberColumn(c, min_value=0, step=1, format="%d")
-            elif t == "flt":
-                cfg[c] = st.column_config.NumberColumn(c, min_value=0.0, step=0.5, format="%g")
-        edited_b = st.data_editor(base, num_rows="dynamic", hide_index=True, width="stretch", column_config=cfg, key=ed_key)
-        if st.button("💾 Tabloyu Kaydet", key=f"{prefix}_bsave", width="stretch"):
-            new = _batch_entries(edited_b.to_dict("records"), spec, keep, str(b_date), st.session_state.user_name)
-            if not new:
-                st.warning("Kaydedilecek satır yok. Adet/kasa 0 olan satırlar atlanır.")
-            else:
-                for e in new:
-                    add_entry(new_dir, e)
-                st.session_state.pop(df_key, None)
-                st.session_state.pop(ed_key, None)
-                st.session_state[msg_key] = f"{len(new)} kayıt eklendi."
-                st.rerun(scope="fragment")
-
 def tg_on():
     try:
         return bool(st.secrets["TELEGRAM_TOKEN"] and st.secrets["TELEGRAM_CHAT_ID"])
@@ -1193,7 +1112,6 @@ def panel_dizim():
     st.header("📒 Günlük Dizim Defteri")
     st.caption("Defterdeki günlük kayıtlar ve fotoğraflar burada tutulur; telefondan da girilebilir.")
     log = load_entries(LOG_DIR, LOG_FILE)
-    batch_entry("dizim", LOG_DIR, log, DIZIM_SPEC, keep=("İşçi",))
 
     with st.form("log_form", clear_on_submit=True):
         f1, f2, f3 = st.columns(3)
@@ -1441,7 +1359,6 @@ with st.sidebar.expander("📥 Başlangıç Reçeteleri"):
 def panel_kesim():
     st.caption("Nerede, ne kadar mal kesildi, kaç parça kırıldı/fire verdi buradan girilir.")
     cuts = load_entries(KESIM_DIR, KESIM_FILE)
-    batch_entry("kesim", KESIM_DIR, cuts, KESIM_SPEC)
 
     with st.form("kesim_form", clear_on_submit=True):
         k1, k2, k3 = st.columns(3)
