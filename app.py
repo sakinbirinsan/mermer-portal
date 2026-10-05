@@ -13,7 +13,7 @@ import base64
 import requests
 import hmac
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 st.set_page_config(
     page_title="Emre Doğaltaş Entegre Yönetim Portalı",
@@ -31,8 +31,11 @@ HISTORY_FILE = os.path.join(DATA_DIR, "order_history.json")
 LOG_FILE = os.path.join(DATA_DIR, "daily_log.json")
 KESIM_FILE = os.path.join(DATA_DIR, "cut_log.json")
 ACTIVE_FILE = os.path.join(DATA_DIR, "active_cart.json")
+LOG_DIR = os.path.join(DATA_DIR, "daily_log")      # dizim defteri: her kayıt ayrı satır
+KESIM_DIR = os.path.join(DATA_DIR, "cut_log")      # kesim defteri: her kayıt ayrı satır
+ORDERS_DIR = os.path.join(DATA_DIR, "orders")      # sipariş takibi
 
-for directory in [TEMPLATES_DIR, PRESETS_DIR, DATA_DIR, LOG_PHOTOS_DIR]:
+for directory in [TEMPLATES_DIR, PRESETS_DIR, DATA_DIR, LOG_PHOTOS_DIR, LOG_DIR, KESIM_DIR, ORDERS_DIR]:
     os.makedirs(directory, exist_ok=True)
 
 # ------------------------------------------
@@ -147,6 +150,50 @@ def load_photo(name):
         with open(path, "rb") as pf:
             return pf.read()
     return None
+
+def load_entries(new_dir, legacy_file):
+    items = [v for v in read_dir(new_dir).values() if isinstance(v, dict)]
+    items += [e for e in read_json(legacy_file, []) if isinstance(e, dict)]
+    return items
+
+def add_entry(new_dir, entry):
+    write_json(os.path.join(new_dir, f"{entry['id']}.json"), entry)
+
+def remove_entry(new_dir, legacy_file, eid):
+    path = os.path.join(new_dir, f"{eid}.json")
+    if exists_json(path):
+        delete_json(path)
+    else:
+        write_json(legacy_file, [e for e in read_json(legacy_file, []) if e.get("id") != eid])
+
+def now_hm():
+    return datetime.now(timezone(timedelta(hours=3))).strftime("%H:%M")
+
+# --- B) sipariş takibi ---
+def _line_key(it):
+    return "|".join(str(it.get(k, "")) for k in ("Müşteri", "PO / Sipariş No", "Ürün Adı", "Ebat (cm)"))
+
+def order_status(plan, prod, load):
+    if plan > 0 and load >= plan:
+        return "✅ Yüklendi"
+    if plan > 0 and prod >= plan:
+        return "📦 Hazır"
+    if prod > 0 or load > 0:
+        return "🏭 Üretimde"
+    return "⏳ Bekliyor"
+
+def upsert_order(project, cart):
+    """Sepeti sipariş olarak kaydeder; aynı satırların üretim/yükleme ilerlemesi korunur."""
+    path = os.path.join(ORDERS_DIR, f"{safe_name(project)}.json")
+    old = read_json(path, {}, fresh=True)
+    prev = {l["key"]: l for l in old.get("lines", [])}
+    lines = []
+    for it in cart:
+        k = _line_key(it)
+        pr = prev.get(k, {})
+        lines.append({"key": k, "plan": int(it.get("Kasa Sayısı", 0)), "prod": pr.get("prod", 0), "load": pr.get("load", 0), "item": it})
+    write_json(path, {"project": project, "created": old.get("created", str(date.today())), "lines": lines,
+                      "by": st.session_state.user_name, "at": str(date.today())})
 
 def tg_on():
     try:
@@ -337,12 +384,13 @@ if st.sidebar.button("🗑️ Tüm Sepeti Temizle", width="stretch"):
     st.session_state["_active_sig"] = ""
     st.rerun()
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📐 1. Ürün, Reçete & Stok Parametreleri", 
     "🧩 2. Dizim, Şinik & Kutu Planı",
     "🛒 3. Sipariş Havuzu & Packing List", 
     "🚢 4. İhracat & Konteyner Doluluk",
-    "💾 5. Yönetici Şablon & Onay Yönetimi"
+    "💾 5. Yönetici Şablon & Onay Yönetimi",
+    "📋 6. Sipariş Takibi"
 ])
 
 # ------------------------------------------
@@ -925,6 +973,7 @@ with tab5:
                 }
                 save_path = os.path.join(TEMPLATES_DIR, f"{safe_name(order_no)}.json")
                 log_history(order_no, st.session_state.cart)
+                upsert_order(order_no, st.session_state.cart)
                 write_json(save_path, payload)
                 notify(f"📝 {st.session_state.user_name} taslağı kaydetti: {order_no}")
                 
@@ -1062,7 +1111,7 @@ def panel_gecmis():
 def panel_dizim():
     st.header("📒 Günlük Dizim Defteri")
     st.caption("Defterdeki günlük kayıtlar ve fotoğraflar burada tutulur; telefondan da girilebilir.")
-    log = read_json(LOG_FILE, [])
+    log = load_entries(LOG_DIR, LOG_FILE)
 
     with st.form("log_form", clear_on_submit=True):
         f1, f2, f3 = st.columns(3)
@@ -1083,15 +1132,15 @@ def panel_dizim():
                 save_photo(photo_name, l_photo.getvalue())
             log.append({"id": uuid.uuid4().hex[:8], "Tarih": str(l_date), "Yer": l_place, "Müşteri": l_cust, "Ürün": l_prod,
                         "Adet": int(l_qty), "Kasa": float(l_crate), "İşçi": int(l_workers), "Not": l_note,
-                        "Foto": photo_name, "Kaydeden": st.session_state.user_name})
-            write_json(LOG_FILE, log)
+                        "Foto": photo_name, "Kaydeden": st.session_state.user_name, "Saat": now_hm()})
+            add_entry(LOG_DIR, log[-1])
             notify(f"📒 Dizim: {l_place} | {l_cust} {l_prod} | {int(l_qty)} adet, {l_crate:g} kasa ({st.session_state.user_name})")
             st.rerun(scope="fragment")
 
     if log:
         days = sorted({e["Tarih"] for e in log}, reverse=True)
         day = st.selectbox("Gün", days)
-        day_items = [e for e in log if e["Tarih"] == day]
+        day_items = sorted([e for e in log if e["Tarih"] == day], key=lambda e: e.get("Saat", ""))
         d1, d2 = st.columns(2)
         d1.metric("Günlük Toplam Adet", f"{sum(e['Adet'] for e in day_items):,}")
         d2.metric("Günlük Biten Kasa", f"{sum(e['Kasa'] for e in day_items):.1f}")
@@ -1104,7 +1153,7 @@ def panel_dizim():
         del_sel = st.selectbox("Silinecek kayıt:", [f"{e['id']} | {e['Yer']} - {e['Ürün']} ({e['Adet']})" for e in day_items])
         if st.button("🗑️ Seçili Kaydı Sil"):
             did = del_sel.split(" | ")[0]
-            write_json(LOG_FILE, [e for e in log if e["id"] != did])
+            remove_entry(LOG_DIR, LOG_FILE, did)
             st.rerun(scope="fragment")
 
 
@@ -1309,7 +1358,7 @@ with st.sidebar.expander("📥 Başlangıç Reçeteleri"):
 # ------------------------------------------
 def panel_kesim():
     st.caption("Nerede, ne kadar mal kesildi, kaç parça kırıldı/fire verdi buradan girilir.")
-    cuts = read_json(KESIM_FILE, [])
+    cuts = load_entries(KESIM_DIR, KESIM_FILE)
 
     with st.form("kesim_form", clear_on_submit=True):
         k1, k2, k3 = st.columns(3)
@@ -1335,15 +1384,15 @@ def panel_kesim():
             cuts.append({"id": uuid.uuid4().hex[:8], "Tarih": str(k_date), "Yer": k_place, "Usta": k_worker,
                          "Müşteri": k_cust, "Malzeme": k_mat, "Ürün": k_prod, "Adet": int(k_qty), "m²": float(k_m2),
                          "Fire": int(k_fire), "Plaka": int(k_plate), "Not": k_note, "Foto": photo_name,
-                         "Kaydeden": st.session_state.user_name})
-            write_json(KESIM_FILE, cuts)
+                         "Kaydeden": st.session_state.user_name, "Saat": now_hm()})
+            add_entry(KESIM_DIR, cuts[-1])
             notify(f"✂️ Kesim: {k_place} | {k_mat} {k_prod} | {int(k_qty)} adet, fire {int(k_fire)} ({st.session_state.user_name})")
             st.rerun(scope="fragment")
 
     if cuts:
         days = sorted({e["Tarih"] for e in cuts}, reverse=True)
         day = st.selectbox("Gün", days, key="kesim_day")
-        items = [e for e in cuts if e["Tarih"] == day]
+        items = sorted([e for e in cuts if e["Tarih"] == day], key=lambda e: e.get("Saat", ""))
         m1, m2, m3 = st.columns(3)
         m1.metric("Kesilen Adet", f"{sum(e['Adet'] for e in items):,}")
         m2.metric("Kesilen m²", f"{sum(e['m²'] for e in items):,.1f}")
@@ -1362,7 +1411,7 @@ def panel_kesim():
         del_sel = st.selectbox("Silinecek kayıt:", [f"{e['id']} | {e['Yer']} - {e['Ürün']} ({e['Adet']})" for e in items], key="kesim_del")
         if st.button("🗑️ Seçili Kaydı Sil", key="kesim_del_btn"):
             did = del_sel.split(" | ")[0]
-            write_json(KESIM_FILE, [e for e in cuts if e["id"] != did])
+            remove_entry(KESIM_DIR, KESIM_FILE, did)
             st.rerun(scope="fragment")
 
 # ------------------------------------------
@@ -1410,3 +1459,80 @@ with top_bar:
                 dlg_gecmis()
             if tg_on() and st.button("📣 Duyuru Gönder", key="open_duyuru", width="stretch"):
                 dlg_duyuru()
+
+
+# ------------------------------------------
+# TAB 6: SİPARİŞ TAKİBİ
+# ------------------------------------------
+with tab6:
+    st.header("📋 Sipariş Takibi")
+    st.caption("5. sekmeden taslak kaydedilince sipariş buraya düşer. Üretilen ve yüklenen kasa sayısını girin, durum otomatik belirlenir.")
+
+    with st.expander("➕ Mevcut sepeti sipariş olarak kaydet"):
+        _on = st.text_input("Sipariş / Konteyner adı", key="ord_new_name")
+        if st.button("Sipariş oluştur", key="ord_new_btn") and _on.strip() and st.session_state.cart:
+            upsert_order(_on.strip(), st.session_state.cart)
+            st.rerun()
+
+    orders = list(read_dir(ORDERS_DIR).values())
+    if not orders:
+        st.info("Henüz sipariş yok. Sepete ürün ekleyip bir sipariş oluşturun ya da 5. sekmeden taslak kaydedin.")
+    else:
+        def _tot(o, f):
+            return sum(int(l.get(f, 0)) for l in o["lines"])
+        summary = []
+        for o in orders:
+            plan, prod, load = _tot(o, "plan"), _tot(o, "prod"), _tot(o, "load")
+            summary.append({"Sipariş": o["project"],
+                            "Müşteri": ", ".join(sorted({str(l["item"].get("Müşteri", "")) for l in o["lines"]}))[:60],
+                            "Planlanan Kasa": plan, "Üretilen": prod, "Yüklenen": load,
+                            "Durum": order_status(plan, prod, load)})
+        sdf = pd.DataFrame(summary)
+        only_open = st.checkbox("Sadece yüklenmemiş siparişleri göster", value=True)
+        shown = sdf[sdf["Durum"] != "✅ Yüklendi"] if only_open else sdf
+        st.dataframe(shown, width="stretch", hide_index=True)
+
+        names = list(shown["Sipariş"]) or list(sdf["Sipariş"])
+        pick = st.selectbox("Siparişi seç", names, key="ord_pick")
+        o = next(x for x in orders if x["project"] == pick)
+
+        ldf = pd.DataFrame([{
+            "Müşteri": l["item"].get("Müşteri", ""), "PO": l["item"].get("PO / Sipariş No", ""),
+            "Ürün": l["item"].get("Ürün Adı", ""), "Ebat": l["item"].get("Ebat (cm)", ""),
+            "Planlanan Kasa": l["plan"], "Üretilen Kasa": l.get("prod", 0), "Yüklenen Kasa": l.get("load", 0),
+            "Durum": order_status(l["plan"], l.get("prod", 0), l.get("load", 0))} for l in o["lines"]])
+        edited_o = st.data_editor(
+            ldf, hide_index=True, width="stretch", key=f"ord_{safe_name(pick)}",
+            disabled=["Müşteri", "PO", "Ürün", "Ebat", "Planlanan Kasa", "Durum"],
+            column_config={"Üretilen Kasa": st.column_config.NumberColumn(min_value=0, step=1),
+                           "Yüklenen Kasa": st.column_config.NumberColumn(min_value=0, step=1)})
+
+        plan_t = max(_tot(o, "plan"), 1)
+        pc1, pc2 = st.columns(2)
+        pc1.progress(min(_tot(o, "prod") / plan_t, 1.0), text=f"Üretim: {_tot(o, 'prod')} / {plan_t} kasa")
+        pc2.progress(min(_tot(o, "load") / plan_t, 1.0), text=f"Yükleme: {_tot(o, 'load')} / {plan_t} kasa")
+
+        if st.button("💾 İlerlemeyi Kaydet", key="ord_save", width="stretch"):
+            ed = edited_o.fillna(0)
+            for l, (_, r) in zip(o["lines"], ed.iterrows()):
+                l["load"] = int(r["Yüklenen Kasa"])
+                l["prod"] = max(int(r["Üretilen Kasa"]), l["load"])   # yüklenen, üretilenden fazla olamaz
+            o["by"], o["at"] = st.session_state.user_name, str(date.today())
+            write_json(os.path.join(ORDERS_DIR, f"{safe_name(pick)}.json"), o)
+            st.rerun()
+
+        st.markdown("---")
+        if st.button("🛒 Yüklenmemiş kasaları packing list sepetine yükle (mevcut sepetin yerine geçer)", key="ord_to_cart"):
+            new_cart = []
+            for l in o["lines"]:
+                rem = l["plan"] - l.get("load", 0)
+                if rem > 0:
+                    it = dict(l["item"])
+                    it["Kasa Sayısı"] = rem
+                    new_cart.append(it)
+            st.session_state.cart = new_cart
+            save_auto_recovery()
+            st.rerun()
+        if st.checkbox("Bu siparişi silmek istiyorum", key="ord_del_ok") and st.button("🗑️ Siparişi Sil", key="ord_del"):
+            delete_json(os.path.join(ORDERS_DIR, f"{safe_name(pick)}.json"))
+            st.rerun()
